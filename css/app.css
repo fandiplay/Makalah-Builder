@@ -319,24 +319,15 @@ input[type="range"] { min-height: 44px; accent-color: var(--primary); }
 /* Tombol pengaturan di dashboard */
 .ai-settings-dash { align-self: flex-start; margin-top: var(--sp-3); }
 
-/* Tombol pengaturan di appbar editor: order sama dengan Unduh PDF supaya di
-   layar sempit turun ke baris sendiri, bukan memotong judul draf. */
-.ai-settings-edit { order: 4; }
 
-/* Tombol AI pada header setiap bagian form */
-.ai-sec-btn {
-  flex: none;
-  min-height: 34px;
-  padding: 5px 12px;
-  font-size: 11.5px;
-  letter-spacing: .4px;
-  text-transform: none;
-  color: var(--primary);
-  background: var(--primary-soft);
-  border-radius: 9999px;
+/* Satu tombol AI utama di header editor. Tidak ada tombol AI per bagian. */
+.ai-start-edit { order: 3; }
+.ai-settings-edit { order: 5; }
+.ai-project-prompt {
+  min-height: 150px;
+  border-radius: var(--radius-md) !important;
 }
-.ai-sec-btn-end { margin-left: auto; }
-@media (hover: hover) { .ai-sec-btn:hover { background: var(--primary); color: var(--on-primary); } }
+.ai-project-hint { margin-bottom: 0; }
 
 /* ---------- overlay + bottom sheet ---------- */
 .ai-overlay {
