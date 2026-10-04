@@ -3,62 +3,120 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-const TOKENS = [
-  ['judul', 'judul'], ['matkul', 'matkul'], ['dosen', 'dosen'],
-  ['prodi', 'prodi'], ['kampus', 'institusi'], ['kota', 'kota'], ['penulis', 'penulis']
-];
+const TOKENS_BY_TPL = {
+  sma: [['judul', 'judul'], ['mapel', 'mapel'], ['guru', 'guru'], ['sekolah', 'sekolah'], ['kelas', 'kelas'], ['siswa', 'siswa'], ['tahunAjaran', 'tahunAjaran']],
+  kampus: [['judul', 'judul'], ['matkul', 'matkul'], ['dosen', 'dosen'], ['prodi', 'prodi'], ['kampus', 'institusi'], ['kota', 'kota'], ['penulis', 'penulis']]
+};
+const tokensFor = tpl => TOKENS_BY_TPL[tpl] || TOKENS_BY_TPL.sma;
 
-/* Skema form. Satu sumber kebenaran untuk markup, daftar isi, dan checklist. */
-const FORM = [
-  {
-    id: 'cover', title: 'Cover / Halaman Judul', meta: d => (d.judul ? 'judul terisi' : 'judul kosong'), fields: [
-      { p: 'judul', t: 'text', label: 'Judul Makalah', ph: 'contoh: Penerapan Metode Pembelajaran Active Learning', hint: 'Di cover otomatis jadi kapital, TNR 16pt bold.' },
-      { p: 'subjudul', t: 'text', label: 'Subjudul (opsional)' },
-      { p: 'matkul', t: 'text', label: 'Mata Kuliah', req: true },
-      { p: 'dosen', t: 'text', label: 'Dosen Pengampu', ph: 'contoh: Dr. H. Ahmad Fauzi, M.Pd.', hint: 'Tulis lengkap dengan gelar, mengikuti berkas resmi.', req: true },
-      { p: 'logo', t: 'logo', label: 'Logo Kampus', hint: 'PNG/JPG, otomatis dikecilkan. Kosong = pakai penanda [LOGO KAMPUS].' },
-      { p: 'anggota', t: 'members', label: 'Anggota Tim', add: 'Tambah Anggota', req: true },
-      { p: 'prodi', t: 'text', label: 'Program Studi', req: true },
-      { p: 'fakultas', t: 'text', label: 'Fakultas' },
-      { p: 'institusi', t: 'text', label: 'Institusi / Universitas' },
-      { p: 'kota', t: 'text', label: 'Kota' },
-      { p: 'tahun', t: 'text', label: 'Tahun' }
-    ]
-  },
-  {
-    id: 'kata', title: 'Kata Pengantar', meta: d => 'bismillah ' + (d.kata.basmalah ? 'aktif' : 'nonaktif'), fields: [
-      { p: 'kata.basmalah', t: 'check', label: 'Tampilkan lafadz Bismillah di atas' },
-      { p: 'kata.teks', t: 'area', label: 'Isi Kata Pengantar', rows: 10, tokens: true, hint: 'Placeholder diisi otomatis dari data cover. {{judul}}, {{matkul}}, {{dosen}} dan lainnya.' },
-      { p: 'kata.tanggal', t: 'text', label: 'Tanggal' },
-      { p: 'kata.penulis', t: 'text', label: 'Penulis pada tanda tangan' }
-    ]
-  },
-  {
-    id: 'bab1', title: 'Bab I Pendahuluan', fields: [
-      { p: 'bab1.latar', t: 'area', label: 'Latar Belakang', rows: 8, ph: 'Tulis dipisah baris kosong untuk paragraf baru.', req: true },
-      { p: 'bab1.rumusan', t: 'items', label: 'Rumusan Masalah', add: 'Tambah Butir', itemPh: 'Butir pertanyaan 1', req: true },
-      { p: 'bab1.tujuan', t: 'items', label: 'Tujuan Penulisan', add: 'Tambah Butir', itemPh: 'Tujuan 1' },
-      { p: 'bab1.manfaat', t: 'area', label: 'Manfaat Penulisan', rows: 5 }
-    ]
-  },
-  {
-    id: 'bab2', title: 'Bab II Pembahasan', meta: d => d.bab2.subbab.length + ' subbab', fields: [
-      { p: 'bab2.pref', t: 'select', label: 'Penomoran subbab', options: [['alpha', 'A, B, C, ...'], ['num', '2.1, 2.2, ...']] },
-      { p: 'bab2.subbab', t: 'subbab', label: 'Subbab / Topik', add: 'Tambah Subbab', req: true }
-    ]
-  },
-  {
-    id: 'bab3', title: 'Bab III Penutup', fields: [
-      { p: 'bab3.kesimpulan', t: 'area', label: 'Kesimpulan', rows: 6, req: true },
-      { p: 'bab3.saran', t: 'area', label: 'Saran', rows: 5 }
-    ]
-  },
-  {
-    id: 'pustaka', title: 'Daftar Pustaka', meta: d => d.pustaka.length + ' referensi', fields: [
-      { p: 'pustaka', t: 'refs', label: 'Referensi', add: 'Tambah Referensi', hint: 'Disusun otomatis: Penulis (Tahun). Judul. Penerbit. Tautan.' }
-    ]
-  }
-];
+/* Skema form per template. Satu sumber kebenaran untuk markup, daftar isi,
+   dan checklist. Style dokumen identik; yang berbeda hanya field identitas. */
+const FORM_BY_TPL = {
+  sma: [
+    {
+      id: 'cover', title: 'Cover / Halaman Judul', meta: d => (d.judul ? 'judul terisi' : 'judul kosong'), fields: [
+        { p: 'jenisKarya', t: 'text', label: 'Jenis Karya', ph: 'contoh: Makalah / Tugas Akhir' },
+        { p: 'judul', t: 'text', label: 'Judul Makalah', ph: 'contoh: Pengaruh Media Sosial terhadap Prestasi Belajar', hint: 'Di cover otomatis jadi kapital, TNR 16pt bold, di atas logo.' },
+        { p: 'subjudul', t: 'text', label: 'Subjudul (opsional)' },
+        { p: 'logo', t: 'logo', label: 'Logo Sekolah', hint: 'PNG/JPG, otomatis dikecilkan. Kosong = pakai penanda [LOGO SEKOLAH].' },
+        { p: 'siswa', t: 'text', label: 'Nama Siswa', ph: 'contoh: Ahmad Rizki', req: true },
+        { p: 'kelas', t: 'text', label: 'Kelas', ph: 'contoh: XI IPA 1', req: true },
+        { p: 'absen', t: 'text', label: 'No. Absen' },
+        { p: 'mapel', t: 'text', label: 'Mata Pelajaran', ph: 'contoh: Biologi', req: true },
+        { p: 'guru', t: 'text', label: 'Guru Pembimbing', ph: 'contoh: Dra. Siti Aminah, M.Pd.', hint: 'Tulis lengkap dengan gelar.', req: true },
+        { p: 'sekolah', t: 'text', label: 'Nama Sekolah', ph: 'contoh: SMA Negeri 1 Banjarmasin', req: true },
+        { p: 'kota', t: 'text', label: 'Kota' },
+        { p: 'tahunAjaran', t: 'text', label: 'Tahun Ajaran', ph: 'contoh: 2024/2025', hint: 'Dicetak di dasar halaman cover.' }
+      ]
+    },
+    {
+      id: 'kata', title: 'Kata Pengantar', meta: d => 'bismillah ' + (d.kata.basmalah ? 'aktif' : 'nonaktif'), fields: [
+        { p: 'kata.basmalah', t: 'check', label: 'Tampilkan lafadz Bismillah di atas' },
+        { p: 'kata.teks', t: 'area', label: 'Isi Kata Pengantar', rows: 10, tokens: true, hint: 'Placeholder diisi otomatis dari data cover. {{judul}}, {{mapel}}, {{guru}} dan lainnya.' },
+        { p: 'kata.tanggal', t: 'text', label: 'Tanggal' },
+        { p: 'kata.penulis', t: 'text', label: 'Penulis pada tanda tangan', ph: 'kosong = pakai nama siswa' }
+      ]
+    },
+    {
+      id: 'bab1', title: 'Bab I Pendahuluan', fields: [
+        { p: 'bab1.latar', t: 'area', label: 'Latar Belakang', rows: 8, ph: 'Tulis dipisah baris kosong untuk paragraf baru.', req: true },
+        { p: 'bab1.rumusan', t: 'items', label: 'Rumusan Masalah', add: 'Tambah Butir', itemPh: 'Butir pertanyaan 1', req: true },
+        { p: 'bab1.tujuan', t: 'items', label: 'Tujuan Penulisan', add: 'Tambah Butir', itemPh: 'Tujuan 1' },
+        { p: 'bab1.manfaat', t: 'area', label: 'Manfaat Penulisan', rows: 5 }
+      ]
+    },
+    {
+      id: 'bab2', title: 'Bab II Pembahasan', meta: d => d.bab2.subbab.length + ' subbab', fields: [
+        { p: 'bab2.pref', t: 'select', label: 'Penomoran subbab', options: [['alpha', 'A, B, C, ...'], ['num', '2.1, 2.2, ...']] },
+        { p: 'bab2.subbab', t: 'subbab', label: 'Subbab / Topik', add: 'Tambah Subbab', req: true }
+      ]
+    },
+    {
+      id: 'bab3', title: 'Bab III Penutup', fields: [
+        { p: 'bab3.kesimpulan', t: 'area', label: 'Kesimpulan', rows: 6, req: true },
+        { p: 'bab3.saran', t: 'area', label: 'Saran', rows: 5 }
+      ]
+    },
+    {
+      id: 'pustaka', title: 'Daftar Pustaka', meta: d => d.pustaka.length + ' referensi', fields: [
+        { p: 'pustaka', t: 'refs', label: 'Referensi', add: 'Tambah Referensi', hint: 'Disusun otomatis: Penulis (Tahun). Judul. Penerbit. Tautan.' }
+      ]
+    }
+  ],
+  kampus: [
+    {
+      id: 'cover', title: 'Cover / Halaman Judul', meta: d => (d.judul ? 'judul terisi' : 'judul kosong'), fields: [
+        { p: 'judul', t: 'text', label: 'Judul Makalah', ph: 'contoh: Penerapan Metode Pembelajaran Active Learning', hint: 'Di cover otomatis jadi kapital, TNR 16pt bold.' },
+        { p: 'subjudul', t: 'text', label: 'Subjudul (opsional)' },
+        { p: 'matkul', t: 'text', label: 'Mata Kuliah', req: true },
+        { p: 'dosen', t: 'text', label: 'Dosen Pengampu', ph: 'contoh: Dr. H. Ahmad Fauzi, M.Pd.', hint: 'Tulis lengkap dengan gelar, mengikuti berkas resmi.', req: true },
+        { p: 'logo', t: 'logo', label: 'Logo Kampus', hint: 'PNG/JPG, otomatis dikecilkan. Kosong = pakai penanda [LOGO KAMPUS].' },
+        { p: 'anggota', t: 'members', label: 'Anggota Tim', add: 'Tambah Anggota', req: true },
+        { p: 'prodi', t: 'text', label: 'Program Studi', req: true },
+        { p: 'fakultas', t: 'text', label: 'Fakultas' },
+        { p: 'institusi', t: 'text', label: 'Institusi / Universitas' },
+        { p: 'kota', t: 'text', label: 'Kota' },
+        { p: 'tahun', t: 'text', label: 'Tahun' }
+      ]
+    },
+    {
+      id: 'kata', title: 'Kata Pengantar', meta: d => 'bismillah ' + (d.kata.basmalah ? 'aktif' : 'nonaktif'), fields: [
+        { p: 'kata.basmalah', t: 'check', label: 'Tampilkan lafadz Bismillah di atas' },
+        { p: 'kata.teks', t: 'area', label: 'Isi Kata Pengantar', rows: 10, tokens: true, hint: 'Placeholder diisi otomatis dari data cover. {{judul}}, {{matkul}}, {{dosen}} dan lainnya.' },
+        { p: 'kata.tanggal', t: 'text', label: 'Tanggal' },
+        { p: 'kata.penulis', t: 'text', label: 'Penulis pada tanda tangan' }
+      ]
+    },
+    {
+      id: 'bab1', title: 'Bab I Pendahuluan', fields: [
+        { p: 'bab1.latar', t: 'area', label: 'Latar Belakang', rows: 8, ph: 'Tulis dipisah baris kosong untuk paragraf baru.', req: true },
+        { p: 'bab1.rumusan', t: 'items', label: 'Rumusan Masalah', add: 'Tambah Butir', itemPh: 'Butir pertanyaan 1', req: true },
+        { p: 'bab1.tujuan', t: 'items', label: 'Tujuan Penulisan', add: 'Tambah Butir', itemPh: 'Tujuan 1' },
+        { p: 'bab1.manfaat', t: 'area', label: 'Manfaat Penulisan', rows: 5 }
+      ]
+    },
+    {
+      id: 'bab2', title: 'Bab II Pembahasan', meta: d => d.bab2.subbab.length + ' subbab', fields: [
+        { p: 'bab2.pref', t: 'select', label: 'Penomoran subbab', options: [['alpha', 'A, B, C, ...'], ['num', '2.1, 2.2, ...']] },
+        { p: 'bab2.subbab', t: 'subbab', label: 'Subbab / Topik', add: 'Tambah Subbab', req: true }
+      ]
+    },
+    {
+      id: 'bab3', title: 'Bab III Penutup', fields: [
+        { p: 'bab3.kesimpulan', t: 'area', label: 'Kesimpulan', rows: 6, req: true },
+        { p: 'bab3.saran', t: 'area', label: 'Saran', rows: 5 }
+      ]
+    },
+    {
+      id: 'pustaka', title: 'Daftar Pustaka', meta: d => d.pustaka.length + ' referensi', fields: [
+        { p: 'pustaka', t: 'refs', label: 'Referensi', add: 'Tambah Referensi', hint: 'Disusun otomatis: Penulis (Tahun). Judul. Penerbit. Tautan.' }
+      ]
+    }
+  ]
+};
+
+let FORM = FORM_BY_TPL.sma; /* diganti saat editor dibuka sesuai template draf */
+const formFor = tpl => FORM_BY_TPL[tpl] || FORM_BY_TPL.sma;
 
 const App = {
   doc: null,
@@ -95,7 +153,7 @@ const BLANK = {
   'bab2.subbab': { judul: '', isi: '' }, 'pustaka': { penulis: '', tahun: '', judul: '', penerbit: '', url: '' }
 };
 function hydrate(raw) {
-  const base = newDoc();
+  const base = newDocFor((raw && raw.template) || 'sma');
   const d = Object.assign(base, raw || {});
   ['kata', 'bab1', 'bab2', 'bab3'].forEach(k => { d[k] = Object.assign(base[k], (raw && raw[k]) || {}); });
   d.id = (raw && raw.id) || base.id;
@@ -124,12 +182,14 @@ function renderDash() {
   list.innerHTML = '';
   docs.forEach(d => {
     const title = (d.judul || '').trim() || 'Makalah tanpa judul';
+    const tplLabel = d.template === 'kampus' ? 'Kuliah' : 'SMA';
+    const sub = d.matkul || d.mapel;
     const li = document.createElement('li');
     li.className = 'card draft';
     li.innerHTML =
       '<a class="draft-main" href="#/d/' + esc(d.id) + '">' +
         '<strong>' + esc(title) + '</strong>' +
-        '<span>' + (d.matkul ? esc(d.matkul) + ' &middot; ' : '') + 'diperbarui ' + esc(fmtTime(d.updatedAt)) + '</span>' +
+        '<span><span class="badge">' + tplLabel + '</span>' + (sub ? ' ' + esc(sub) + ' &middot; ' : ' ') + 'diperbarui ' + esc(fmtTime(d.updatedAt)) + '</span>' +
       '</a>' +
       '<button type="button" class="btn-mini" data-act="del" data-id="' + esc(d.id) + '" aria-label="Hapus draf ' + esc(title) + '">Hapus</button>';
     list.appendChild(li);
@@ -141,6 +201,7 @@ function renderDash() {
 /* ============================== editor ============================== */
 function renderForm() {
   const form = $('#form');
+  FORM = formFor(App.doc.template);
   form.innerHTML = '';
   FORM.forEach(sec => {
     const d = document.createElement('details');
@@ -207,7 +268,7 @@ function renderField(f) {
     if (f.tokens) {
       const box = document.createElement('div');
       box.className = 'tokens';
-      TOKENS.forEach(t => {
+      tokensFor(App.doc.template).forEach(t => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'token';
@@ -222,7 +283,7 @@ function renderField(f) {
   } else if (f.t === 'logo') {
     const img = document.createElement('img');
     img.id = 'logoPreview';
-    img.alt = 'Pratinjau logo kampus';
+    img.alt = 'Pratinjau logo';
     img.className = 'mb-2 h-20 w-20 rounded-md border border-stone-300 bg-white object-contain p-1';
     img.src = App.doc.logo || logoPlaceholderDataUrl();
     img.style.display = App.doc.logo ? 'block' : 'none';
@@ -323,7 +384,7 @@ function renderList(host, f) {
 }
 
 function listField(path) {
-  return FORM.flatMap(s => s.fields).find(f => f.p === path);
+  return formFor(App.doc.template).flatMap(s => s.fields).find(f => f.p === path);
 }
 
 function onFieldInput(e) {
@@ -572,8 +633,10 @@ function route() {
   const m = location.hash.match(/^#\/d\/(.+)$/);
   if (!m) return showDash();
   let id = m[1];
-  if (id === 'new') {
-    const doc = newDoc();
+  const newMatch = id.match(/^new(?:\/(sma|kampus))?$/);
+  if (newMatch) {
+    const tpl = newMatch[1] || 'sma'; /* #/d/new tanpa template = SMA (default) */
+    const doc = newDocFor(tpl);
     Store.put(doc);
     history.replaceState(null, '', '#/d/' + doc.id);
     id = doc.id;
@@ -595,10 +658,28 @@ function showEditor(doc) {
   $('#viewDash').classList.add('is-hidden');
   $('#viewEditor').classList.remove('is-hidden');
   $('#saveStatus').textContent = 'Tersimpan otomatis ' + fmtTime(doc.updatedAt).split(',').pop().trim();
+  syncTemplatePicker();
   renderForm();
   buildPaper();
   fitZoom();
   updatePanes();
+}
+
+/* ---------- pemilih template ---------- */
+function syncTemplatePicker() {
+  const sel = $('#tplPick');
+  if (sel && App.doc) sel.value = App.doc.template || 'sma';
+}
+
+/* Ganti template draf yang sedang dibuka. Field isian yang tidak dipakai
+   template baru tetap tersimpan di draf (tidak dihapus), jadi bolak-balik
+   template tidak menghilangkan data. */
+function setTemplate(tpl) {
+  if (!App.doc || App.doc.template === tpl) return;
+  App.doc.template = tpl;
+  renderForm();
+  syncTemplatePicker();
+  touch();
 }
 
 function updatePanes() {
@@ -639,6 +720,7 @@ function boot() {
     openTo(b.dataset.sec, b.dataset.field);
   });
 
+  $('#tplPick').addEventListener('change', e => setTemplate(e.target.value));
   $('#tabForm').addEventListener('click', () => { App.tab = 'form'; updatePanes(); });
   $('#tabPaper').addEventListener('click', () => { App.tab = 'paper'; updatePanes(); if (App.paperDirty) buildPaper(); fitZoom(); });
   $('#btnPrint').addEventListener('click', printDoc);

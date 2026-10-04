@@ -21,7 +21,7 @@
   <header class="appbar">
     <div class="mx-auto w-full max-w-3xl px-4 py-3">
       <p class="font-serif text-2xl leading-tight tracking-tight">Makalah Editor</p>
-      <p class="mt-0.5 text-sm text-stone-600">Susun makalah format UIN Antasari, langsung dari HP.</p>
+      <p class="mt-0.5 text-sm text-stone-600">Susun makalah SMA &amp; kuliah dengan format standar kampus, langsung dari HP.</p>
     </div>
   </header>
 
@@ -29,7 +29,7 @@
     <section class="card p-4 sm:p-5">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0">
-          <h2 class="font-serif text-lg">Template Standar Makalah Kampus</h2>
+          <h2 class="font-serif text-lg">Template Standar Makalah</h2>
           <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-4">
             <div><dt class="text-stone-500">Kertas</dt><dd>A4 (21 &times; 29,7 cm)</dd></div>
             <div><dt class="text-stone-500">Huruf</dt><dd>Times New Roman 12 pt</dd></div>
@@ -37,7 +37,10 @@
             <div><dt class="text-stone-500">Margin</dt><dd>4 / 3 / 3 / 3 cm</dd></div>
           </dl>
         </div>
-        <a href="#/d/new" class="btn-primary shrink-0">Buat Makalah Baru</a>
+        <div class="flex shrink-0 flex-col gap-2 sm:flex-row">
+          <a href="#/d/new/sma" class="btn-primary shrink-0">Makalah SMA</a>
+          <a href="#/d/new/kampus" class="btn-ghost shrink-0">Makalah Kuliah</a>
+        </div>
       </div>
     </section>
 
@@ -48,7 +51,7 @@
       </h2>
       <ul id="draftList" class="space-y-2"></ul>
       <p id="draftEmpty" class="is-hidden card p-4 text-sm text-stone-600">
-        Belum ada draf. Tekan <strong>Buat Makalah Baru</strong> untuk mulai. Setiap ketikan tersimpan otomatis di HP ini.
+        Belum ada draf. Tekan <strong>Makalah SMA</strong> atau <strong>Makalah Kuliah</strong> untuk mulai. Setiap ketikan tersimpan otomatis di HP ini.
       </p>
     </section>
   </main>
@@ -63,6 +66,11 @@
         <p id="docTitle" class="truncate font-serif text-[15px] leading-tight"></p>
         <p id="saveStatus" class="truncate text-xs text-stone-600" role="status" aria-live="polite"></p>
       </div>
+      <label for="tplPick" class="sr-only">Template</label>
+      <select id="tplPick" class="shrink-0" style="width:auto;min-height:38px;padding:.25rem .5rem" title="Ganti template dokumen">
+        <option value="sma">Template SMA</option>
+        <option value="kampus">Template Kuliah</option>
+      </select>
       <button type="button" id="btnPrint" class="btn-primary shrink-0">Unduh PDF</button>
     </div>
   </header>

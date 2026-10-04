@@ -183,3 +183,28 @@ input[type="range"] { min-height: 44px; accent-color: var(--accent); }
 .draft-main span { display: block; font-size: .75rem; color: #57534e; margin-top: .125rem; }
 
 .paper-bg { background: var(--desk); }
+
+/* Badge template pada kartu draf */
+.badge {
+  display: inline-block;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #14532d;
+  border: 1px solid #a7f3d0;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  vertical-align: middle;
+}
+
+/* Hanya untuk pembaca layar */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

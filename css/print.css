@@ -57,13 +57,19 @@
 .empty-slot { margin: 0; color: #666; font-style: italic; }
 
 /* ---------- cover ---------- */
-.cover .pg-body { text-align: center; }
+/* Cover memakai flex kolom supaya baris tahun ajaran (SMA) bisa menempel di
+   dasar halaman dengan margin-top:auto tanpa mengubah pagination isi. */
+.cover .pg-body { display: flex; flex-direction: column; text-align: center; }
 .cover .para { text-indent: 0; text-align: center; }
-.cover .c-judul { font-size: 16pt; font-weight: 700; text-transform: uppercase; }
+.cover .c-jenis { margin: 0 0 18pt; font-size: 12pt; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.cover .c-judul { font-size: 16pt; font-weight: 700; text-transform: uppercase; margin: 0; }
 .cover .c-sub { font-style: italic; }
+.cover .c-siswa { margin-top: 4pt; font-weight: 700; }
 .cover .c-anggota { margin-top: 4pt; }
 .cover .c-kampus { margin-top: 4pt; }
-.cover .logo { width: 100%; }
+/* Baris tahun ajaran: menempel di dasar area isi (sesudah semua blok cover). */
+.cover .cover-tahun { margin-top: auto; padding-top: 12pt; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.cover .logo { width: 100%; margin: 12pt 0; }
 .cover .logo img { display: block; margin: 0 auto; width: 4.4cm; height: 4.4cm; object-fit: contain; }
 .cover .logo .logo-ph {
   margin: 0 auto;

@@ -15,13 +15,20 @@ const Doc = {
   },
 
   /* Ganti {{token}} dengan isi draf; yang kosong jadi [penanda] supaya
-     kekosongan terlihat di PDF, bukan jadi teks palsu. */
+     kekosongan terlihat di PDF, bukan jadi teks palsu. Token mengikuti
+     template: SMA pakai mapel/guru/sekolah, kampus pakai matkul/dosen/prodi. */
   subst(text, doc) {
+    const sma = doc.template === 'sma';
     const vals = {
-      judul: doc.judul, subjudul: doc.subjudul, matkul: doc.matkul, dosen: doc.dosen,
+      judul: doc.judul, subjudul: doc.subjudul,
+      matkul: sma ? doc.mapel : doc.matkul,
+      dosen: sma ? doc.guru : doc.dosen,
+      mapel: doc.mapel, guru: doc.guru, sekolah: doc.sekolah,
       prodi: doc.prodi, fakultas: doc.fakultas, institusi: doc.institusi,
-      kota: doc.kota, tahun: doc.tahun,
-      penulis: doc.kata.penulis || 'Tim Penulis'
+      kelas: doc.kelas, siswa: doc.siswa,
+      kota: doc.kota, tahun: sma ? doc.tahunAjaran : doc.tahun,
+      tahunAjaran: doc.tahunAjaran,
+      penulis: doc.kata.penulis || (sma ? doc.siswa : '') || 'Tim Penulis'
     };
     return String(text).replace(/\{\{(\w+)\}\}/g, (m, k) => {
       const v = vals[k];
@@ -32,6 +39,37 @@ const Doc = {
 
   /* ---------- cover ---------- */
   coverBlocks(doc) {
+    return doc.template === 'sma' ? this.coverSma(doc) : this.coverKampus(doc);
+  },
+
+  /* Cover SMA: judul di atas logo, lalu identitas siswa & sekolah,
+     penutup baris tahun ajaran di dasar halaman. */
+  coverSma(doc) {
+    const b = [];
+    const push = (node, keep) => b.push({ node, keep: keep !== false });
+
+    if ((doc.jenisKarya || '').trim()) push(el('p', 'c-jenis', doc.jenisKarya.trim().toUpperCase()), true);
+    push(el('p', 'c-judul', doc.judul.trim().toUpperCase() || '[JUDUL MAKALAH]'));
+    if (doc.subjudul.trim()) push(el('p', 'c-sub', doc.subjudul.trim()));
+    // Judul harus di atas logo: logoNode dipasang setelah blok judul.
+    push(logoNode(doc.logo, 'Logo Sekolah'));
+    push(el('p', 'gap-2'));
+    push(el('p', 'no-indent', 'Disusun oleh:'), true);
+    push(el('p', 'c-siswa', doc.siswa.trim() || '[nama siswa]'), true);
+    push(el('p', 'no-indent', ['Kelas ' + (doc.kelas.trim() || '[kelas]'),
+      doc.absen.trim() ? 'No. Absen ' + doc.absen.trim() : ''].filter(Boolean).join(' · ')), true);
+    push(el('p', 'gap-3'));
+    push(el('p', 'no-indent', 'Mata Pelajaran: ' + (doc.mapel.trim() || '[mata pelajaran]')), true);
+    push(el('p', 'no-indent', 'Guru Pembimbing: ' + (doc.guru.trim() || '[nama guru, gelar]')), true);
+    push(el('p', 'gap-3'));
+    push(el('p', 'c-kampus', doc.sekolah.trim().toUpperCase() || '[NAMA SEKOLAH]'), true);
+    push(el('p', 'no-indent', doc.kota.trim() || '[kota]'), true);
+    // Baris tahun ajaran menempel di dasar halaman (margin-top:auto di print.css).
+    push(el('p', 'cover-tahun', 'TAHUN AJARAN ' + (doc.tahunAjaran.trim() || defaultTahunAjaran())), true);
+    return b;
+  },
+
+  coverKampus(doc) {
     const b = [];
     const push = (node, keep) => b.push({ node, keep: keep !== false });
 
@@ -54,8 +92,8 @@ const Doc = {
     push(el('p', 'no-indent', doc.institusi.trim() || '[institusi]'), true);
     push(el('p', 'no-indent', [doc.kota.trim() || '[kota]', doc.tahun.trim() || String(new Date().getFullYear())].join(', ')), false);
 
-    // Logo diletakkan di paling atas cover
-    b.unshift({ node: logoNode(doc.logo), keep: true });
+    // Logo diletakkan di paling atas cover (template kampus).
+    b.unshift({ node: logoNode(doc.logo, 'Logo Kampus'), keep: true });
     return b;
   },
 
@@ -151,6 +189,27 @@ const Doc = {
   /* ---------- cek kelengkapan ---------- */
   /* field = data-path asli supaya tombol checklist bisa langsung fokus ke kolomnya. */
   missing(doc) {
+    return doc.template === 'sma' ? this.missingSma(doc) : this.missingKampus(doc);
+  },
+
+  missingSma(doc) {
+    const m = [];
+    const add = (sec, field, label, ok) => { if (!ok) m.push({ sec, field, label }); };
+    add('cover', 'judul', 'Judul makalah', !!doc.judul.trim());
+    add('cover', 'mapel', 'Mata pelajaran', !!doc.mapel.trim());
+    add('cover', 'guru', 'Guru pembimbing', !!doc.guru.trim());
+    add('cover', 'siswa', 'Nama siswa', !!doc.siswa.trim());
+    add('cover', 'kelas', 'Kelas', !!doc.kelas.trim());
+    add('cover', 'sekolah', 'Nama sekolah', !!doc.sekolah.trim());
+    add('bab1', 'bab1.latar', 'Latar belakang', !!doc.bab1.latar.trim());
+    add('bab1', 'bab1.rumusan.0', 'Rumusan masalah', doc.bab1.rumusan.some(t => t.trim()));
+    add('bab2', 'bab2.subbab.0.judul', 'Subbab pembahasan', doc.bab2.subbab.some(s => s.judul.trim() || s.isi.trim()));
+    add('bab3', 'bab3.kesimpulan', 'Kesimpulan', !!doc.bab3.kesimpulan.trim());
+    add('pustaka', 'pustaka.0.judul', 'Referensi minimal 1', doc.pustaka.some(r => r.judul.trim() || r.penulis.trim()));
+    return m;
+  },
+
+  missingKampus(doc) {
     const m = [];
     const add = (sec, field, label, ok) => { if (!ok) m.push({ sec, field, label }); };
     add('cover', 'judul', 'Judul makalah', !!doc.judul.trim());
@@ -194,15 +253,15 @@ function pushItems(blocks, arr) {
   list.forEach((t, i) => blocks.push({ node: el('p', 'li', (i + 1) + '. ' + t) }));
 }
 
-function logoNode(dataUrl) {
+function logoNode(dataUrl, label) {
   const p = el('p', 'logo');
   if (dataUrl) {
     const img = document.createElement('img');
     img.src = dataUrl;
-    img.alt = 'Logo kampus';
+    img.alt = label || 'Logo';
     p.appendChild(img);
   } else {
-    p.appendChild(el('div', 'logo-ph', 'LOGO KAMPUS\n(belum diunggah)')); // white-space: pre-line di print.css
+    p.appendChild(el('div', 'logo-ph', (label || 'LOGO').toUpperCase() + '\n(belum diunggah)'));
   }
   return p;
 }
