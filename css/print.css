@@ -1,0 +1,130 @@
+/* print.css: mesin dokumen. Semua satuan dalam cm supaya identik di layar & di cetak.
+   Format mengikuti template makalah: A4, Times New Roman 12pt, spasi 1,5,
+   margin kiri 4 cm, atas/kanan/bawah 3 cm. */
+
+:root {
+  --m-top: 3cm;
+  --m-right: 3cm;
+  --m-bottom: 3cm;
+  --m-left: 4cm;
+  --doc-font: "Times New Roman", Times, "Liberation Serif", serif;
+}
+
+@page {
+  size: A4;
+  /* Margin dibawa oleh .sheet, bukan oleh @page: nomor halaman & blok
+     "BAB pertama" butuh ruang di dalam pita margin; isi @page tidak pernah
+     dicetak di area margin. Nilai 0cm di sini mencegah margin ganda dari
+     dialog cetak. */
+  margin: 0;
+}
+
+.sheets { transform-origin: 0 0; }
+
+.sheet {
+  position: relative;
+  box-sizing: border-box;
+  width: 21cm;
+  height: 29.7cm;
+  padding: var(--m-top) var(--m-right) var(--m-bottom) var(--m-left);
+  margin: 0 0 14px;
+  background: var(--paper);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .28); /* tepi kertas di atas latar meja */
+}
+
+.pg-body {
+  height: 23.7cm; /* 29.7 - 3 - 3; dipakai juga sebagai ambang pagination */
+  overflow: hidden;
+  font-family: var(--doc-font);
+  font-size: 12pt;
+  line-height: 1.5;
+  color: #000;
+}
+.pg-body > :first-child { margin-top: 0; }
+
+.sheets.building { position: fixed; top: 0; left: -20000px; visibility: hidden; }
+
+/* ---------- blok isi ---------- */
+.para { margin: 0; text-indent: 1.2cm; text-align: justify; }
+.no-indent { text-indent: 0; }
+.h-bab { margin: 0; font-weight: 700; text-align: center; text-transform: uppercase; }
+.h-bab .line { display: block; }
+.h-bab.bab-new { margin-top: 12pt; }
+.h-sub { margin: 12pt 0 6pt; font-weight: 700; text-align: left; }
+.li { margin: 0; margin-left: 1.5cm; text-indent: -1.5cm; text-align: justify; }
+.ref { margin: 0 0 6pt 1.5cm; text-indent: -1.5cm; text-align: justify; }
+.empty-slot { margin: 0; color: #666; font-style: italic; }
+
+/* ---------- cover ---------- */
+.cover .pg-body { text-align: center; }
+.cover .para { text-indent: 0; text-align: center; }
+.cover .c-judul { font-size: 16pt; font-weight: 700; text-transform: uppercase; }
+.cover .c-sub { font-style: italic; }
+.cover .c-anggota { margin-top: 4pt; }
+.cover .c-kampus { margin-top: 4pt; }
+.cover .logo { width: 100%; }
+.cover .logo img { display: block; margin: 0 auto; width: 4.4cm; height: 4.4cm; object-fit: contain; }
+.cover .logo .logo-ph {
+  margin: 0 auto;
+  width: 4.4cm; height: 4.4cm;
+  border: 1px dashed #999;
+  display: flex; align-items: center; justify-content: center;
+  white-space: pre-line; text-align: center;
+  font-size: 8pt; color: #666; letter-spacing: .02em;
+}
+.cover .c-nim { font-size: 10pt; }
+.cover .gap-1 { height: 24pt; }
+.cover .gap-2 { height: 14pt; }
+.cover .gap-3 { height: 36pt; }
+
+/* ---------- kata pengantar ---------- */
+.cover-arab { font-size: 14pt; line-height: 1.6; margin: 0 0 6pt; }
+.sign { text-align: right; text-indent: 0; margin: 0; }
+.sign-space { height: 48pt; }
+.sign-name { text-decoration: underline; }
+
+/* ---------- daftar isi ---------- */
+.toc-item { display: flex; align-items: baseline; gap: .35cm; margin: 0; text-indent: 0; text-align: left; }
+.toc-item .toc-label { white-space: nowrap; }
+.toc-item .toc-dots { flex: 1 1 auto; border-bottom: 1px dotted #000; transform: translateY(-.18em); }
+.toc-item .toc-page { white-space: nowrap; }
+.toc-item.lvl-2 { padding-left: 1.2cm; }
+
+/* ---------- nomor halaman ---------- */
+.pgnum {
+  position: absolute;
+  font-family: var(--doc-font);
+  font-size: 12pt;
+  color: #000;
+}
+.pgnum.top { top: 1.5cm; right: 3cm; }
+.pgnum.bottom { bottom: 1.5cm; left: 0; right: 0; text-align: center; }
+
+/* ============================ CETAK ============================ */
+@media print {
+  html, body { margin: 0; padding: 0; background: #fff; }
+
+  /* Sembunyikan chrome, paksa wadah kertas jadi alur normal */
+  #viewDash, .appbar, .tabbar, #paneForm, .zoombar, #toast { display: none !important; }
+  #viewEditor, #panePaper, #paperWrap, #sheets {
+    display: block !important;
+    position: static !important;
+    transform: none !important;
+    height: auto !important;
+    max-height: none !important;
+    max-width: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+  .sheets.building { position: static !important; left: auto !important; visibility: visible !important; }
+
+  .sheet { box-shadow: none; margin: 0; break-inside: avoid; }
+  .sheet + .sheet { break-before: page; }
+}
