@@ -3,41 +3,39 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#14532d">
+<meta name="theme-color" content="#f97316">
 <link rel="icon" href="data:,">
 <title>Makalah Editor</title>
 
-<!-- UI: Tailwind Play CDN. Preview/print memakai CSS sendiri (print.css) supaya
-     PDF tetap benar walau CDN tidak termuat. Ganti dengan build Tailwind
-     (npx tailwindcss) kalau aplikasi harus jalan fully offline. -->
-<script src="https://cdn.tailwindcss.com"></script>
+<!-- UI: design system custom (stylekiosku.md) di css/app.css. Pratinjau/print
+     memakai CSS sendiri (print.css) supaya PDF tetap benar. -->
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/print.css">
 </head>
-<body class="bg-stone-100 text-stone-900 antialiased">
+<body>
 
 <!-- ============================ DASHBOARD ============================ -->
 <section id="viewDash">
   <header class="appbar">
-    <div class="mx-auto w-full max-w-3xl px-4 py-3">
-      <p class="font-serif text-2xl leading-tight tracking-tight">Makalah Editor</p>
-      <p class="mt-0.5 text-sm text-stone-600">Susun makalah SMA &amp; kuliah dengan format standar kampus, langsung dari HP.</p>
+    <div class="wrap wrap-dash appbar-inner">
+      <p class="app-title">Makalah Editor</p>
+      <p class="app-sub">Susun makalah SMA &amp; kuliah dengan format standar kampus, langsung dari HP.</p>
     </div>
   </header>
 
-  <main class="mx-auto w-full max-w-3xl px-4 py-5 space-y-5">
-    <section class="card p-4 sm:p-5">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
-          <h2 class="font-serif text-lg">Template Standar Makalah</h2>
-          <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-4">
-            <div><dt class="text-stone-500">Kertas</dt><dd>A4 (21 &times; 29,7 cm)</dd></div>
-            <div><dt class="text-stone-500">Huruf</dt><dd>Times New Roman 12 pt</dd></div>
-            <div><dt class="text-stone-500">Spasi</dt><dd>1,5 baris</dd></div>
-            <div><dt class="text-stone-500">Margin</dt><dd>4 / 3 / 3 / 3 cm</dd></div>
+  <main class="wrap wrap-dash dash-main">
+    <section class="card card-lg">
+      <div class="specs-row">
+        <div class="specs-text">
+          <h2 class="card-title">Template Standar Makalah</h2>
+          <dl class="specs-grid">
+            <div><dt>Kertas</dt><dd>A4 (21 &times; 29,7 cm)</dd></div>
+            <div><dt>Huruf</dt><dd>Times New Roman 12 pt</dd></div>
+            <div><dt>Spasi</dt><dd>1,5 baris</dd></div>
+            <div><dt>Margin</dt><dd>4 / 3 / 3 / 3 cm</dd></div>
           </dl>
         </div>
-        <div class="flex shrink-0 flex-col gap-2 sm:flex-row">
+        <div class="specs-actions">
           <a href="#/d/new/sma" class="btn-primary shrink-0">Makalah SMA</a>
           <a href="#/d/new/kampus" class="btn-ghost shrink-0">Makalah Kuliah</a>
         </div>
@@ -45,12 +43,12 @@
     </section>
 
     <section>
-      <h2 class="mb-2 flex items-baseline justify-between font-serif text-base">
+      <h2 class="section-head">
         <span>Draf Tersimpan</span>
-        <span id="draftCount" class="text-xs font-sans font-normal text-stone-500"></span>
+        <span id="draftCount" class="section-count"></span>
       </h2>
-      <ul id="draftList" class="space-y-2"></ul>
-      <p id="draftEmpty" class="is-hidden card p-4 text-sm text-stone-600">
+      <ul id="draftList" class="draft-list"></ul>
+      <p id="draftEmpty" class="is-hidden card empty-note">
         Belum ada draf. Tekan <strong>Makalah SMA</strong> atau <strong>Makalah Kuliah</strong> untuk mulai. Setiap ketikan tersimpan otomatis di HP ini.
       </p>
     </section>
@@ -60,52 +58,52 @@
 <!-- ============================== EDITOR ============================= -->
 <section id="viewEditor" class="is-hidden">
   <header class="appbar">
-    <div class="mx-auto flex w-full max-w-6xl items-center gap-3 px-3 py-2.5">
-      <a href="#/" class="btn-ghost shrink-0">&larr; Beranda</a>
-      <div class="min-w-0 flex-1">
-        <p id="docTitle" class="truncate font-serif text-[15px] leading-tight"></p>
-        <p id="saveStatus" class="truncate text-xs text-stone-600" role="status" aria-live="polite"></p>
+    <div class="wrap wrap-editor editor-appbar-inner">
+      <a href="#/" class="btn-ghost editor-back">&larr; Beranda</a>
+      <div class="editor-meta">
+        <p id="docTitle" class="editor-title"></p>
+        <p id="saveStatus" class="editor-status" role="status" aria-live="polite"></p>
       </div>
       <label for="tplPick" class="sr-only">Template</label>
-      <select id="tplPick" class="shrink-0" style="width:auto;min-height:38px;padding:.25rem .5rem" title="Ganti template dokumen">
+      <select id="tplPick" class="tpl-pick" title="Ganti template dokumen">
         <option value="sma">Template SMA</option>
         <option value="kampus">Template Kuliah</option>
       </select>
-      <button type="button" id="btnPrint" class="btn-primary shrink-0">Unduh PDF</button>
+      <button type="button" id="btnPrint" class="btn-primary editor-print">Unduh PDF</button>
     </div>
   </header>
 
-  <div id="tabs" class="tabbar sticky top-0 z-20 border-b border-stone-300 bg-stone-100/95 backdrop-blur">
-    <div class="mx-auto flex w-full max-w-6xl gap-1 px-3 py-2" role="tablist" aria-label="Tampilan editor">
+  <div id="tabs" class="tabbar">
+    <div class="wrap wrap-editor tabbar-inner" role="tablist" aria-label="Tampilan editor">
       <button type="button" role="tab" id="tabForm" aria-selected="true" aria-controls="paneForm" class="tab">Form Input</button>
       <button type="button" role="tab" id="tabPaper" aria-selected="false" aria-controls="panePaper" class="tab">Pratinjau PDF</button>
     </div>
   </div>
 
-  <main class="mx-auto grid w-full max-w-6xl gap-5 px-3 py-4 lg:grid-cols-[minmax(22rem,26rem)_1fr] lg:items-start">
-    <div id="paneForm" role="tabpanel" aria-labelledby="tabForm" class="min-w-0 space-y-3">
-      <div id="checklist" class="card p-3 text-sm"></div>
+  <main class="wrap wrap-editor editor-main">
+    <div id="paneForm" role="tabpanel" aria-labelledby="tabForm" class="form-pane">
+      <div id="checklist" class="card checklist"></div>
       <div id="form"></div>
-      <p class="px-1 pb-2 text-xs text-stone-500">
+      <p class="form-note">
         Draf disimpan di penyimpanan lokal browser ini. Menghapus data situs akan menghapus draf.
       </p>
     </div>
 
-    <div id="panePaper" role="tabpanel" aria-labelledby="tabPaper" class="is-offpane min-w-0" aria-hidden="true">
-      <div class="zoombar mb-2 flex items-center gap-3">
-        <label for="zoom" class="text-xs font-medium text-stone-700">Zoom</label>
-        <input type="range" id="zoom" min="0.3" max="1.6" step="0.02" value="0.5" class="w-32">
-        <button type="button" id="btnFit" class="btn-ghost text-xs">Pas layar</button>
-        <span id="paperStatus" class="ml-auto text-xs text-stone-600" role="status" aria-live="polite"></span>
+    <div id="panePaper" role="tabpanel" aria-labelledby="tabPaper" class="paper-pane is-offpane" aria-hidden="true">
+      <div class="zoombar">
+        <label for="zoom" class="zoom-label">Zoom</label>
+        <input type="range" id="zoom" min="0.3" max="1.6" step="0.02" value="0.5">
+        <button type="button" id="btnFit" class="btn-ghost btn-fit">Pas layar</button>
+        <span id="paperStatus" class="paper-status" role="status" aria-live="polite"></span>
       </div>
-      <div id="paperWrap" class="paper-bg overflow-x-auto rounded-lg border border-stone-300 p-3">
+      <div id="paperWrap" class="paper-bg">
         <div id="sheets" class="sheets"></div>
       </div>
     </div>
   </main>
 </section>
 
-<div id="toast" class="is-hidden fixed inset-x-3 bottom-3 z-50 mx-auto max-w-sm rounded-md bg-stone-900 px-4 py-3 text-sm text-white" role="status" aria-live="polite"></div>
+<div id="toast" class="toast is-hidden" role="status" aria-live="polite"></div>
 
 <script src="js/store.js"></script>
 <script src="js/doc.js"></script>
