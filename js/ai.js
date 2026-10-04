@@ -278,13 +278,27 @@
     return L.join('\n');
   }
 
-  function aiPrompt(secId) {
+  function aiPrompt(secId, userPrompt, projectValues) {
     var sec = AI_SECTIONS[secId];
     var L = [];
     L.push('Bagian yang harus ditulis: ' + sec.title);
+    if (userPrompt) {
+      L.push('');
+      L.push('Instruksi pengguna:');
+      L.push(String(userPrompt).trim());
+    }
     L.push('');
     L.push('Data draf:');
     L.push(aiContext());
+    if (projectValues && typeof projectValues === 'object') {
+      L.push('');
+      L.push('Isi yang sudah dihasilkan AI dalam proses ini. Gunakan agar bagian berikutnya konsisten:');
+      Object.keys(projectValues).forEach(function (k) {
+        var v = projectValues[k];
+        if (Array.isArray(v)) L.push(k + ': ' + JSON.stringify(v));
+        else if (v != null && String(v).trim()) L.push(k + ': ' + String(v));
+      });
+    }
     L.push('');
     L.push('Tulis hanya kunci JSON berikut (tidak boleh ada kunci lain):');
     L.push('{');
@@ -691,29 +705,169 @@
     });
   }
 
+  /* ---------- satu tombol AI untuk seluruh makalah ---------- */
+  var project = { prompt: '', values: {}, busy: false, seq: 0 };
+
+  function aiProjectFields() {
+    var out = [];
+    Object.keys(AI_SECTIONS).forEach(function (secId) {
+      AI_SECTIONS[secId].fields.forEach(function (f) { out.push({ secId: secId, f: f }); });
+    });
+    return out;
+  }
+
+  function aiProjectOpen() {
+    var cfg = aiLoad();
+    if (!cfg.key) {
+      aiOpenSettings();
+      toast('Isi pengaturan AI dulu.');
+      return;
+    }
+    if (!App.doc) { toast('Buka draf dulu.'); return; }
+
+    aiOpen('Mulai dengan AI');
+
+    var label = document.createElement('p');
+    label.className = 'ai-status';
+    label.textContent = 'Jelaskan makalah yang kamu mau. AI akan menyusun semua bagian sekaligus dari satu instruksi.';
+    dlg.body.appendChild(label);
+
+    var ta = document.createElement('textarea');
+    ta.id = 'aiProjectPrompt';
+    ta.className = 'ai-project-prompt';
+    ta.placeholder = 'Contoh: Buat makalah SMA tentang dampak media sosial terhadap prestasi belajar. Gunakan bahasa formal dan pembahasan yang cukup lengkap.';
+    ta.value = '';
+    dlg.body.appendChild(ta);
+
+    var hint = document.createElement('p');
+    hint.className = 'hint ai-project-hint';
+    hint.textContent = 'Isi data pribadi seperti nama, sekolah, NIM, atau dosen tetap dimasukkan manual di form agar AI tidak mengarang.';
+    dlg.body.appendChild(hint);
+
+    dlg.foot.textContent = '';
+    dlg.foot.appendChild(aiBtn('Batal', 'btn-ghost', aiClose));
+    var go = aiBtn('✨ Mulai', 'btn-primary', function () {
+      var prompt = ta.value.trim();
+      if (!prompt) { toast('Tulis prompt makalah dulu.'); ta.focus(); return; }
+      aiProjectGenerate(prompt);
+    });
+    dlg.foot.appendChild(go);
+    setTimeout(function () { ta.focus(); }, 30);
+  }
+
+  function aiProjectPreview() {
+    project.busy = false;
+    dlg.title.textContent = 'Hasil AI — Periksa sebelum diterapkan';
+    dlg.body.textContent = '';
+
+    Object.keys(AI_SECTIONS).forEach(function (secId) {
+      var sec = AI_SECTIONS[secId];
+      sec.fields.forEach(function (f) {
+        var v = project.values[f.path];
+        var box = document.createElement('div');
+        box.className = 'ai-view';
+        var l = document.createElement('p');
+        l.className = 'ai-view-label';
+        l.textContent = sec.title + ' · ' + f.label;
+        box.appendChild(l);
+        if (f.kind === 'items' || f.kind === 'subbab' || f.kind === 'refs') {
+          var arr = Array.isArray(v) ? v : [];
+          if (!arr.length) {
+            var em = document.createElement('p');
+            em.className = 'ai-view-val ai-view-empty';
+            em.textContent = '(kosong)';
+            box.appendChild(em);
+          }
+          arr.forEach(function (item, i) {
+            var line = document.createElement('p');
+            line.className = 'ai-view-val';
+            if (f.kind === 'items') line.textContent = (i + 1) + '. ' + item;
+            else if (f.kind === 'subbab') line.textContent = (i + 1) + '. ' + ((item && item.judul) || '(tanpa judul)') + '\\n' + ((item && item.isi) || '');
+            else line.textContent = (i + 1) + '. ' + [(item && item.penulis) || '', (item && item.tahun) || '', (item && item.judul) || '', (item && item.penerbit) || ''].filter(Boolean).join('. ') + '.';
+            box.appendChild(line);
+          });
+        } else {
+          var t = document.createElement('p');
+          t.className = 'ai-view-val';
+          t.textContent = String(v == null ? '' : v).trim() || '(kosong)';
+          box.appendChild(t);
+        }
+        dlg.body.appendChild(box);
+      });
+    });
+
+    dlg.foot.textContent = '';
+    dlg.foot.appendChild(aiBtn('Batal', 'btn-ghost', aiProjectCancel));
+    dlg.foot.appendChild(aiBtn('Ulangi', 'btn-ghost', function () { aiProjectGenerate(project.prompt); }));
+    dlg.foot.appendChild(aiBtn('Terapkan Semua', 'btn-primary', aiProjectApply));
+  }
+
+  function aiProjectGenerate(prompt) {
+    var cfg = aiLoad();
+    var seq = ++project.seq;
+    project.prompt = prompt;
+    project.values = {};
+    project.busy = true;
+    aiOpen('Menyusun makalah dengan AI');
+    aiBusyView('✨ AI sedang menyiapkan makalah…');
+
+    var fields = aiProjectFields();
+    var i = 0;
+
+    function next() {
+      if (seq !== project.seq) return;
+      if (i >= fields.length) {
+        aiProjectPreview();
+        return;
+      }
+      var item = fields[i++];
+      var label = item.f.label;
+      dlg.body.textContent = '';
+      var p = document.createElement('p');
+      p.className = 'ai-status';
+      p.textContent = '✨ Menulis ' + label + ' (' + i + '/' + fields.length + ')…';
+      dlg.body.appendChild(p);
+
+      aiChat(cfg, AI_SYSTEM, aiPrompt(item.secId, prompt, project.values), 4000).then(function (r) {
+        if (seq !== project.seq) return;
+        if (r.error) {
+          project.busy = false;
+          aiErrorView(r.error, function () { aiProjectGenerate(project.prompt); });
+          return;
+        }
+        var data = aiParseJSON(r.text);
+        if (!data || typeof data !== 'object' || !(item.f.path in data)) {
+          project.busy = false;
+          aiErrorView('Balasan AI tidak valid untuk bagian ' + label + '. Tekan Ulangi.', function () { aiProjectGenerate(project.prompt); });
+          return;
+        }
+        project.values[item.f.path] = aiNormalize(item.f, data[item.f.path]);
+        next();
+      });
+    }
+    next();
+  }
+
+  function aiProjectApply() {
+    var fields = aiProjectFields();
+    fields.forEach(function (item) {
+      var value = project.values[item.f.path];
+      if (value !== undefined) aiWriteField(item.f, value);
+    });
+    updateSectionMeta();
+    updateChecklist();
+    touch();
+    toast('Makalah AI diterapkan dan disimpan.');
+    aiClose();
+  }
+
+  function aiProjectCancel() {
+    project.seq++;
+    project.busy = false;
+    aiClose();
+  }
+
   /* ---------- tombol per bagian form ---------- */
-  function aiAttachSection(details) {
-    var id = String(details.id || '').replace(/^sec-/, '');
-    if (!AI_SECTIONS[id]) return;
-    if (details.querySelector('.ai-sec-btn')) return;
-    var summary = details.querySelector('summary');
-    if (!summary) return;
-
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'btn-mini ai-sec-btn';
-    b.textContent = '✨ Tulis dengan AI';
-    b.title = 'Tulis isi bagian ini dengan bantuan AI';
-    b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); aiGenerate(id); });
-
-    var meta = summary.querySelector('.sec-meta');
-    if (meta) summary.insertBefore(b, meta);
-    else { b.className = 'btn-mini ai-sec-btn ai-sec-btn-end'; summary.appendChild(b); }
-  }
-
-  function aiScanSections() {
-    $$('#form details.sec').forEach(aiAttachSection);
-  }
 
   /* ---------- tombol pengaturan ---------- */
   function aiAddSettingsButtons() {
@@ -727,6 +881,15 @@
       dash.appendChild(b1);
     }
     var ed = document.querySelector('#viewEditor .editor-appbar-inner');
+    if (ed && !ed.querySelector('.ai-start-edit')) {
+      var start = document.createElement('button');
+      start.type = 'button';
+      start.className = 'btn-primary ai-start-edit';
+      start.textContent = '✨ Mulai AI';
+      start.title = 'Masukkan satu prompt untuk menyusun seluruh makalah';
+      start.addEventListener('click', aiProjectOpen);
+      ed.appendChild(start);
+    }
     if (ed && !ed.querySelector('.ai-settings-edit')) {
       var b2 = document.createElement('button');
       b2.type = 'button';
@@ -735,8 +898,6 @@
       b2.title = 'Pengaturan AI';
       b2.setAttribute('aria-label', 'Pengaturan AI');
       b2.addEventListener('click', aiOpenSettings);
-      /* Diletakkan setelah tombol Unduh PDF: dengan order yang sama, flex
-         menaruhnya di baris sendiri pada layar sempit (title tetap terbaca). */
       ed.appendChild(b2);
     }
   }
@@ -744,11 +905,6 @@
   /* ---------- init ---------- */
   function aiInit() {
     aiAddSettingsButtons();
-    aiScanSections();
-    var form = $('#form');
-    if (form && window.MutationObserver) {
-      new MutationObserver(aiScanSections).observe(form, { childList: true, subtree: true });
-    }
   }
 
   /*自查 guard: file tetap bisa diimpor untuk cek helper tanpa browser.
