@@ -708,14 +708,6 @@
   /* ---------- satu tombol AI untuk seluruh makalah ---------- */
   var project = { prompt: '', values: {}, busy: false, seq: 0 };
 
-  function aiProjectFields() {
-    var out = [];
-    Object.keys(AI_SECTIONS).forEach(function (secId) {
-      AI_SECTIONS[secId].fields.forEach(function (f) { out.push({ secId: secId, f: f }); });
-    });
-    return out;
-  }
-
   function aiProjectOpen() {
     var cfg = aiLoad();
     if (!cfg.key) {
@@ -811,24 +803,24 @@
     aiOpen('Menyusun makalah dengan AI');
     aiBusyView('✨ AI sedang menyiapkan makalah…');
 
-    var fields = aiProjectFields();
+    var sections = Object.keys(AI_SECTIONS);
     var i = 0;
 
     function next() {
       if (seq !== project.seq) return;
-      if (i >= fields.length) {
+      if (i >= sections.length) {
         aiProjectPreview();
         return;
       }
-      var item = fields[i++];
-      var label = item.f.label;
+      var secId = sections[i++];
+      var sec = AI_SECTIONS[secId];
       dlg.body.textContent = '';
       var p = document.createElement('p');
       p.className = 'ai-status';
-      p.textContent = '✨ Menulis ' + label + ' (' + i + '/' + fields.length + ')…';
+      p.textContent = '✨ Menulis ' + sec.title + ' (' + i + '/' + sections.length + ')…';
       dlg.body.appendChild(p);
 
-      aiChat(cfg, AI_SYSTEM, aiPrompt(item.secId, prompt, project.values), 4000).then(function (r) {
+      aiChat(cfg, AI_SYSTEM, aiPrompt(secId, prompt, project.values), 4000).then(function (r) {
         if (seq !== project.seq) return;
         if (r.error) {
           project.busy = false;
@@ -836,12 +828,20 @@
           return;
         }
         var data = aiParseJSON(r.text);
-        if (!data || typeof data !== 'object' || !(item.f.path in data)) {
+        if (!data || typeof data !== 'object') {
           project.busy = false;
-          aiErrorView('Balasan AI tidak valid untuk bagian ' + label + '. Tekan Ulangi.', function () { aiProjectGenerate(project.prompt); });
+          aiErrorView('Balasan AI tidak valid untuk ' + sec.title + '. Tekan Ulangi.', function () { aiProjectGenerate(project.prompt); });
           return;
         }
-        project.values[item.f.path] = aiNormalize(item.f, data[item.f.path]);
+        var missing = sec.fields.filter(function (f) { return !(f.path in data); });
+        if (missing.length) {
+          project.busy = false;
+          aiErrorView('AI belum mengisi semua field untuk ' + sec.title + '. Tekan Ulangi.', function () { aiProjectGenerate(project.prompt); });
+          return;
+        }
+        sec.fields.forEach(function (f) {
+          project.values[f.path] = aiNormalize(f, data[f.path]);
+        });
         next();
       });
     }
@@ -849,10 +849,11 @@
   }
 
   function aiProjectApply() {
-    var fields = aiProjectFields();
-    fields.forEach(function (item) {
-      var value = project.values[item.f.path];
-      if (value !== undefined) aiWriteField(item.f, value);
+    Object.keys(AI_SECTIONS).forEach(function (secId) {
+      AI_SECTIONS[secId].fields.forEach(function (f) {
+        var value = project.values[f.path];
+        if (value !== undefined) aiWriteField(f, value);
+      });
     });
     updateSectionMeta();
     updateChecklist();
