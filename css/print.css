@@ -174,27 +174,40 @@
 
 /* ---------- daftar isi ---------- */
 .toc-item {
-  display: flex;
-  align-items: flex-end;
-  gap: .25cm;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  column-gap: .25cm;
   margin: 0;
   text-indent: 0;
   text-align: left;
 }
 .toc-item .toc-label {
-  flex: 0 1 auto;
   min-width: 0;
-  max-width: calc(100% - 1.9cm);
   overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 .toc-item .toc-dots {
-  flex: 1 1 1cm;
-  min-width: 1cm;
-  border-bottom: 1px dotted #000;
-  transform: translateY(-.18em);
-  margin-bottom: .12em;
+  display: none;
 }
-.toc-item .toc-page { flex: none; white-space: nowrap; }
+.toc-item .toc-page {
+  position: relative;
+  min-width: .42cm;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding-left: .25cm;
+}
+.toc-item .toc-page::before {
+  content: "";
+  position: absolute;
+  left: -.25cm;
+  right: 100%;
+  bottom: .2em;
+  width: max(1cm, 12vw);
+  border-bottom: 1px dotted #000;
+  transform: translateX(-100%);
+}
 .toc-item.lvl-2 { padding-left: 1.2cm; }
 
 /* ---------- nomor halaman ---------- */
