@@ -84,9 +84,22 @@ const Pager = {
       const labels = used.map((s, i) => labelFor(sec, base, i));
       used.forEach((s, i) => {
         if (sec.scheme === 'none') return;
-        // Nomor di bawah untuk halaman pembuka bab & prakata, di kanan atas untuk isi lanjutan.
-        const pos = sec.scheme === 'roman' ? 'bottom'
-          : ((i === 0 || s.chapterStart) ? 'bottom' : 'top');
+
+        /*
+         * Halaman pembuka BAB harus selalu nomor bawah-tengah.
+         * Jangan hanya mengandalkan state chapterStart: cek DOM juga supaya
+         * tetap benar jika pagination memindahkan blok saat isi berubah.
+         */
+        const startsChapter = sec.id === 'body' && (
+          i === 0 ||
+          s.chapterStart ||
+          !!s.body.querySelector('.bab-new')
+        );
+
+        const pos = sec.scheme === 'roman'
+          ? 'bottom'
+          : (startsChapter ? 'bottom' : 'top');
+
         s.sheet.appendChild(el('span', 'pgnum ' + pos, labels[i]));
       });
       out.push({ id: sec.id, sheets: used.map(s => s.sheet), labels });
