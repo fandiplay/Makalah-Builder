@@ -22,7 +22,8 @@ const FORM_BY_TPL = {
         { p: 'siswaAnggota', t: 'membersSma', label: 'Siswa', add: 'Tambah Siswa', req: true, hint: 'Tambah siswa bila makalah dikerjakan bersama. No. absen boleh diisi per siswa.' },
         { p: 'kelas', t: 'text', label: 'Kelas', ph: 'contoh: XI IPA 1', req: true },
         { p: 'mapel', t: 'text', label: 'Mata Pelajaran', ph: 'contoh: Biologi', req: true },
-        { p: 'guru', t: 'text', label: 'Guru Pembimbing', ph: 'contoh: Dra. Siti Aminah, M.Pd.', hint: 'Tulis lengkap dengan gelar.', req: true },
+        { p: 'guru', t: 'text', label: 'Guru Pembimbing', ph: 'contoh: Dra. Siti Aminah, M.Pd.', hint: 'Tulis lengkap dengan gelar. Bisa disembunyikan di cover.' },
+        { p: 'sembunyikanGuru', t: 'check', label: 'Sembunyikan nama guru di cover (default: aktif)' },
         { p: 'sekolah', t: 'text', label: 'Nama Sekolah', ph: 'contoh: SMA Negeri 1 Banjarmasin', req: true },
         { p: 'kota', t: 'text', label: 'Kota' },
         { p: 'tahunAjaran', t: 'text', label: 'Tahun Ajaran', ph: 'contoh: 2024/2025', hint: 'Dicetak di dasar halaman cover.' }
@@ -68,7 +69,8 @@ const FORM_BY_TPL = {
         { p: 'judul', t: 'text', label: 'Judul Makalah', ph: 'contoh: Penerapan Metode Pembelajaran Active Learning', hint: 'Di cover otomatis jadi kapital, TNR 16pt bold.' },
         { p: 'subjudul', t: 'text', label: 'Subjudul (opsional)' },
         { p: 'matkul', t: 'text', label: 'Mata Kuliah', req: true },
-        { p: 'dosen', t: 'text', label: 'Dosen Pengampu', ph: 'contoh: Dr. H. Ahmad Fauzi, M.Pd.', hint: 'Tulis lengkap dengan gelar, mengikuti berkas resmi.', req: true },
+        { p: 'dosen', t: 'text', label: 'Dosen Pengampu', ph: 'contoh: Dr. H. Ahmad Fauzi, M.Pd.', hint: 'Tulis lengkap dengan gelar. Bisa disembunyikan di cover.' },
+        { p: 'sembunyikanDosen', t: 'check', label: 'Sembunyikan nama dosen di cover (default: aktif)' },
         { p: 'logo', t: 'logo', label: 'Logo Kampus', hint: 'PNG/JPG, otomatis dikecilkan. Logo dicetak di tengah sebelum daftar anggota.' },
         { p: 'anggota', t: 'members', label: 'Anggota Tim', add: 'Tambah Anggota', req: true, hint: 'Tulis NIM langsung di dalam nama, misalnya: Ahmad Rizki (123456789).' },
         { p: 'prodi', t: 'text', label: 'Program Studi', req: true },
@@ -172,6 +174,10 @@ function hydrate(raw) {
       }));
     }
   }
+
+  /* Default: sembunyikan nama guru/dosen di cover. Draf lama tanpa field tetap true. */
+  if (d.template === 'sma' && d.sembunyikanGuru == null) d.sembunyikanGuru = true;
+  if (d.template === 'kampus' && d.sembunyikanDosen == null) d.sembunyikanDosen = true;
 
   /* Draf kuliah lama tetap dibaca, tetapi NIM lama tidak lagi ditampilkan/ditulis di cover. */
   if (Array.isArray(d.anggota)) {
@@ -384,14 +390,14 @@ function renderList(host, f) {
     head.appendChild(el('span', 'row-no', f.t === 'subbab'
       ? label + ' · ' + Doc.subLabel(App.doc.bab2.pref || 'alpha', i)
       : label));
-    [['up', '↑'], ['down', '↓'], ['del', '×']].forEach(([act, ch]) => {
+    [['up', 'fa-arrow-up'], ['down', 'fa-arrow-down'], ['del', 'fa-xmark']].forEach(([act, icon]) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'btn-mini icon-btn';
       b.dataset.act = act;
       b.dataset.path = f.p;
       b.dataset.i = String(i);
-      b.textContent = ch;
+      b.innerHTML = '<i class="fa-solid ' + icon + '" aria-hidden="true"></i>';
       b.setAttribute('aria-label', (act === 'del' ? 'Hapus ' : 'Geser ') + label);
       b.disabled = (act === 'up' && i === 0) || (act === 'down' && i === arr.length - 1);
       head.appendChild(b);
@@ -680,6 +686,164 @@ function printDoc() {
   }
 }
 
+function safeFilename(name) {
+  return String(name || 'makalah').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'makalah';
+}
+
+/* Unduh DOCX: memakai library docx dari CDN (dimuat on-demand). */
+async function downloadDocx() {
+  if (!App.doc) return;
+  const d = App.doc;
+  toast('Menyiapkan DOCX…');
+  try {
+    if (!window.docx) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('Gagal memuat library DOCX'));
+        document.head.appendChild(s);
+      });
+    }
+    const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel, BorderStyle } = window.docx;
+    const paras = [];
+    const p = (text, opt = {}) => new Paragraph({
+      spacing: { after: 120, line: 360 },
+      alignment: opt.align || AlignmentType.JUSTIFIED,
+      indent: opt.indent,
+      children: [new TextRun({ text: text || '', font: 'Times New Roman', size: opt.size || 24, bold: !!opt.bold, italics: !!opt.italics })]
+    });
+    const center = (text, opt = {}) => p(text, Object.assign({ align: AlignmentType.CENTER }, opt));
+
+    /* Cover ringkas */
+    if (d.template === 'sma') {
+      paras.push(center((d.jenisKarya || 'MAKALAH').toUpperCase(), { bold: true, size: 24 }));
+      paras.push(center((d.judul || '[JUDUL MAKALAH]').toUpperCase(), { bold: true, size: 32 }));
+      if (d.subjudul) paras.push(center(d.subjudul, { italics: true }));
+      paras.push(center(''));
+      paras.push(center('Disusun oleh:', { bold: true }));
+      const students = Array.isArray(d.siswaAnggota) && d.siswaAnggota.length ? d.siswaAnggota : [{ nama: d.siswa || '' }];
+      students.forEach((s, i) => {
+        const name = (s.nama || '[nama siswa]').trim();
+        const absen = (s.absen || '').trim();
+        paras.push(center((i + 1) + '. ' + name + (absen ? ' (Absen ' + absen + ')' : ''), { bold: true }));
+      });
+      paras.push(center(''));
+      paras.push(center('Kelas ' + (d.kelas || '[kelas]')));
+      if (d.mapel) paras.push(center('Mata Pelajaran: ' + d.mapel));
+      if (!d.sembunyikanGuru && d.guru) paras.push(center('Guru Pembimbing: ' + d.guru));
+      paras.push(center((d.sekolah || '[NAMA SEKOLAH]').toUpperCase(), { bold: true }));
+      paras.push(center((d.kota || '[kota]') + ', TAHUN AJARAN ' + (d.tahunAjaran || '')));
+    } else {
+      paras.push(center('MAKALAH', { bold: true }));
+      paras.push(center((d.judul || '[JUDUL MAKALAH]').toUpperCase(), { bold: true, size: 32 }));
+      if (d.subjudul) paras.push(center(d.subjudul, { italics: true }));
+      paras.push(center(''));
+      paras.push(center('Disusun untuk Memenuhi Tugas Mata Kuliah'));
+      paras.push(center(d.matkul || '[mata kuliah]'));
+      if (!d.sembunyikanDosen) {
+        paras.push(center('Dosen Pengampu:'));
+        paras.push(center(d.dosen || '[nama dosen, gelar]', { bold: true }));
+      }
+      paras.push(center(''));
+      paras.push(center('OLEH:', { bold: true }));
+      (d.anggota || []).forEach((a, i) => paras.push(center((i + 1) + '. ' + ((a.nama || '').trim() || '[nama anggota]'))));
+      paras.push(center(''));
+      paras.push(center(d.prodi || '[program studi]', { bold: true }));
+      if (d.fakultas) paras.push(center(d.fakultas));
+      if (d.institusi) paras.push(center(d.institusi));
+      paras.push(center([d.kota || '[kota]', d.tahun || ''].filter(Boolean).join(', ')));
+    }
+
+    paras.push(new Paragraph({ children: [], pageBreakBefore: true }));
+    paras.push(center('KATA PENGANTAR', { bold: true, size: 24 }));
+    const kata = (Doc.subst(d.kata.teks || '', d) || '').split(/\n\s*\n/).filter(Boolean);
+    kata.forEach(t => paras.push(p(t.replace(/\n/g, ' '))));
+    paras.push(p(''));
+    paras.push(new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [new TextRun({ text: [d.kota || '', d.kata.tanggal || ''].filter(Boolean).join(', '), font: 'Times New Roman', size: 24 })]
+    }));
+    paras.push(new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [new TextRun({ text: 'Penulis,', font: 'Times New Roman', size: 24 })]
+    }));
+    paras.push(new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [new TextRun({ text: d.kata.penulis || 'Tim Penulis', font: 'Times New Roman', size: 24, underline: {} })]
+    }));
+
+    const body = Doc.bodyBlocks(d);
+    body.heads; // ensure side effect free
+    /* Bab content from form fields (simplified but complete) */
+    function addHeading(title) {
+      paras.push(new Paragraph({ children: [], pageBreakBefore: true }));
+      paras.push(center(title, { bold: true }));
+    }
+    function addSub(title) { paras.push(p(title, { bold: true, align: AlignmentType.LEFT })); }
+    function addParas(text) {
+      const chunks = String(text || '').split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+      if (!chunks.length) paras.push(p('[Bagian ini belum diisi]', { italics: true }));
+      chunks.forEach(c => paras.push(p(c.replace(/\n/g, ' '))));
+    }
+    function addItems(arr) {
+      const list = (arr || []).map(t => String(t || '').trim()).filter(Boolean);
+      if (!list.length) paras.push(p('[Belum diisi]', { italics: true }));
+      list.forEach((t, i) => paras.push(p((i + 1) + '. ' + t, { align: AlignmentType.LEFT, indent: { left: 720 } })));
+    }
+
+    addHeading('BAB I\nPENDAHULUAN'.replace('\n', ' — '));
+    addSub('A. Latar Belakang'); addParas(d.bab1.latar);
+    addSub('B. Rumusan Masalah'); addItems(d.bab1.rumusan);
+    addSub('C. Tujuan Penulisan'); addItems(d.bab1.tujuan);
+    addSub('D. Manfaat Penulisan'); addParas(d.bab1.manfaat);
+
+    addHeading('BAB II PEMBAHASAN');
+    const subs = (d.bab2.subbab || []).filter(s => (s.judul || '').trim() || (s.isi || '').trim());
+    if (!subs.length) paras.push(p('[Belum ada subbab]', { italics: true }));
+    subs.forEach((s, i) => {
+      const label = Doc.subLabel(d.bab2.pref, i);
+      addSub(label + ' ' + (s.judul || '[judul subbab]'));
+      addParas(s.isi);
+    });
+
+    addHeading('BAB III PENUTUP');
+    addSub('A. Kesimpulan'); addParas(d.bab3.kesimpulan);
+    addSub('B. Saran'); addParas(d.bab3.saran);
+
+    addHeading('DAFTAR PUSTAKA');
+    const refs = (d.pustaka || []).filter(r => (r.judul || '').trim() || (r.penulis || '').trim());
+    if (!refs.length) paras.push(p('[Belum ada referensi]', { italics: true }));
+    refs.forEach(r => {
+      const line = (r.penulis || '[penulis]') + ' (' + (r.tahun || '[tahun]') + '). ' + (r.judul || '[judul]') + '. ' + (r.penerbit || '[penerbit]') + '.' + (r.url ? ' ' + r.url : '');
+      paras.push(p(line, { align: AlignmentType.LEFT, indent: { left: 720, hanging: 720 } }));
+    });
+
+    const docx = new Document({
+      styles: { default: { document: { styles: [{ id: 'Normal', run: { font: 'Times New Roman', size: 24 } }] } } },
+      sections: [{
+        properties: {
+          page: {
+            size: { width: 11906, height: 16838 },
+            margin: { top: 1701, right: 1701, bottom: 1701, left: 2268 }
+          }
+        },
+        children: paras
+      }]
+    });
+    const blob = await Packer.toBlob(docx);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = safeFilename(d.judul) + '.docx';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast('DOCX berhasil diunduh');
+  } catch (err) {
+    console.error(err);
+    toast('Gagal membuat DOCX: ' + (err.message || err));
+  }
+}
+
 /* ============================== router ============================== */
 function route() {
   const m = location.hash.match(/^#\/d\/(.+)$/);
@@ -776,6 +940,8 @@ function boot() {
   $('#tabForm').addEventListener('click', () => { App.tab = 'form'; updatePanes(); });
   $('#tabPaper').addEventListener('click', () => { App.tab = 'paper'; updatePanes(); if (App.paperDirty) buildPaper(); fitZoom(); });
   $('#btnPrint').addEventListener('click', printDoc);
+  const btnDocx = $('#btnDocx');
+  if (btnDocx) btnDocx.addEventListener('click', downloadDocx);
   $('#btnFit').addEventListener('click', fitZoom);
   $('#zoom').addEventListener('input', e => {
     e.target.dataset.touched = '1';

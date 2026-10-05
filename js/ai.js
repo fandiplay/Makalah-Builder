@@ -14,7 +14,6 @@
 
   var AI_KEY = 'makalah.aiconfig.v1';
   var AI_TIMEOUT = 60000; /* 60 detik */
-  var aiActiveController = null;
 
   var AI_DEFAULTS = {
     openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
@@ -68,30 +67,15 @@
   /* ---------- pemanggilan API ---------- */
   function aiFetch(url, opts) {
     var ac = new AbortController();
-    aiActiveController = ac;
     var timedOut = false;
     var timer = setTimeout(function () { timedOut = true; ac.abort(); }, AI_TIMEOUT);
-    var done = function (v) {
-      clearTimeout(timer);
-      if (aiActiveController === ac) aiActiveController = null;
-      return v;
-    };
+    var done = function (v) { clearTimeout(timer); return v; };
     return fetch(url, Object.assign({ signal: ac.signal }, opts)).then(
       function (r) {
         return r.text().then(function (txt) { return done({ status: r.status, text: txt }); });
       },
-      function (err) {
-        if (err && err.name === 'AbortError') return done({ status: 0, text: '', net: true, aborted: true, timedOut: timedOut });
-        return done({ status: 0, text: '', net: true, timedOut: timedOut });
-      }
+      function () { return done({ status: 0, text: '', net: true, timedOut: timedOut }); }
     );
-  }
-
-  function aiAbortCurrent() {
-    if (aiActiveController) {
-      try { aiActiveController.abort(); } catch (e) {}
-      aiActiveController = null;
-    }
   }
 
   /* Status HTTP dipetakan ke pesan Bahasa Indonesia yang ramah. */
@@ -106,7 +90,6 @@
   }
 
   function aiErrMsg(r) {
-    if (r.aborted) return 'Proses AI dihentikan.';
     if (r.net && r.timedOut) return 'Server AI tidak menjawab dalam 60 detik. Coba lagi atau ganti model.';
     if (r.net) return 'Gagal menghubungi server AI. Periksa internet, Base URL, dan izin CORS server.';
     if (r.status < 200 || r.status >= 300) return aiHttpMsg(r.status);
@@ -176,8 +159,37 @@
       .then(function (r) {
         if (r.net) return { error: aiErrMsg(r) };
         if (r.status < 200 || r.status >= 300) return { error: aiHttpMsg(r.status) };
-        return { ok: true, model: cfg.model };
+        return { ok: true, model: cfg.model, status: r.status };
       });
+  }
+
+  /* Ambil daftar model dari provider (OpenAI-compatible: GET /models).
+     Anthropic tidak punya list publik yang sama → kembalikan []. */
+  function aiListModels(cfg) {
+    if (cfg.fmt === 'anthropic') {
+      return Promise.resolve([
+        'claude-3-5-haiku-latest',
+        'claude-3-5-sonnet-latest',
+        'claude-3-opus-latest',
+        'claude-sonnet-4-20250514'
+      ]);
+    }
+    var b = aiNormBase(cfg.base);
+    var url = b + (/\/v1$/i.test(b) ? '/models' : '/v1/models');
+    var headers = aiHeaders(cfg);
+    return aiFetch(url, { method: 'GET', headers: headers }).then(function (r) {
+      if (r.net || r.status < 200 || r.status >= 300) return [];
+      var data = null;
+      try { data = JSON.parse(r.text); } catch (e) { return []; }
+      var arr = (data && Array.isArray(data.data)) ? data.data : (Array.isArray(data) ? data : []);
+      var ids = [];
+      arr.forEach(function (m) {
+        var id = typeof m === 'string' ? m : (m && m.id);
+        if (id && typeof id === 'string') ids.push(id);
+      });
+      ids.sort();
+      return ids;
+    });
   }
 
   /* ---------- skema tiap bagian ---------- */
@@ -371,7 +383,7 @@
     close.className = 'btn-mini icon-btn ai-close';
     close.setAttribute('aria-label', 'Tutup');
     close.textContent = '×';
-    close.addEventListener('click', aiRequestClose);
+    close.addEventListener('click', aiClose);
     head.appendChild(close);
 
     var body = document.createElement('div');
@@ -386,8 +398,8 @@
     ov.appendChild(sheet);
     document.body.appendChild(ov);
 
-    ov.addEventListener('click', function (e) { if (e.target === ov) aiRequestClose(); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !ov.classList.contains('is-hidden')) aiRequestClose(); });
+    ov.addEventListener('click', function (e) { if (e.target === ov) aiClose(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !ov.classList.contains('is-hidden')) aiClose(); });
 
     dlg = { ov: ov, title: title, body: body, foot: foot, onClose: null };
     return dlg;
@@ -401,32 +413,13 @@
     d.onClose = onClose || null;
     d.ov.classList.remove('is-hidden');
     d.ov.setAttribute('aria-hidden', 'false');
-    d.ov.querySelector('.ai-sheet').classList.toggle('ai-busy', !!(typeof run !== 'undefined' && run && run.busy) || !!(typeof project !== 'undefined' && project && project.busy));
     document.body.style.overflow = 'hidden';
   }
 
-  function aiRequestClose() {
+  function aiClose() {
     if (!dlg) return;
-    var busy = (typeof run !== 'undefined' && run && run.busy) || (typeof project !== 'undefined' && project && project.busy);
-    if (busy) {
-      var ok = confirm('AI masih sedang menyusun makalah. Tutup sekarang dan hentikan proses AI?');
-      if (!ok) return;
-      if (typeof run !== 'undefined' && run) { run.seq++; run.busy = false; }
-      if (typeof project !== 'undefined' && project) { project.seq++; project.busy = false; }
-      aiAbortCurrent();
-      aiClose(true);
-      toast('Proses AI dihentikan.');
-      return;
-    }
-    aiClose(true);
-  }
-
-  function aiClose(force) {
-    if (!dlg) return;
-    if (!force) return aiRequestClose();
     dlg.ov.classList.add('is-hidden');
     dlg.ov.setAttribute('aria-hidden', 'true');
-    dlg.ov.querySelector('.ai-sheet').classList.remove('ai-busy');
     document.body.style.overflow = '';
     var cb = dlg.onClose;
     dlg.onClose = null;
@@ -478,7 +471,10 @@
       var f = sel.value;
       /* Isi default hanya kalau isian masih persis default format sebelumnya. */
       if (base.value === AI_DEFAULTS.openai.base || base.value === AI_DEFAULTS.anthropic.base) base.value = AI_DEFAULTS[f].base;
-      if (model.value === AI_DEFAULTS.openai.model || model.value === AI_DEFAULTS.anthropic.model) model.value = AI_DEFAULTS[f].model;
+      var mEl = document.getElementById('aiCfgModel');
+      if (mEl && (mEl.value === AI_DEFAULTS.openai.model || mEl.value === AI_DEFAULTS.anthropic.model)) {
+        mEl.value = AI_DEFAULTS[f].model;
+      }
     });
 
     var base = document.createElement('input');
@@ -508,6 +504,10 @@
     keyRow.appendChild(key);
     keyRow.appendChild(showBtn);
 
+    /* Model: input manual dulu; setelah Tes Koneksi sukses diganti select dari provider. */
+    var modelWrap = document.createElement('div');
+    modelWrap.id = 'aiModelWrap';
+
     var model = document.createElement('input');
     model.type = 'text';
     model.id = 'aiCfgModel';
@@ -515,15 +515,64 @@
     model.placeholder = AI_DEFAULTS.openai.model;
     model.autocomplete = 'off';
     model.spellcheck = false;
+    modelWrap.appendChild(model);
+
+    var statusEl = document.createElement('p');
+    statusEl.className = 'ai-status';
+    statusEl.id = 'aiTestStatus';
+    statusEl.style.margin = '8px 0 0';
+    statusEl.style.fontSize = '13px';
+    statusEl.style.color = 'var(--text-muted)';
+    statusEl.textContent = '';
 
     var read = function () {
-      return { fmt: sel.value, base: aiNormBase(base.value), key: key.value.trim(), model: model.value.trim() };
+      var mEl = document.getElementById('aiCfgModel');
+      var mVal = mEl ? String(mEl.value || '').trim() : '';
+      return { fmt: sel.value, base: aiNormBase(base.value), key: key.value.trim(), model: mVal };
     };
+
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg || '';
+      statusEl.style.color = kind === 'ok' ? 'var(--primary)' : (kind === 'err' ? 'var(--danger)' : 'var(--text-muted)');
+    }
+
+    function fillModelSelect(ids, current) {
+      modelWrap.textContent = '';
+      var selM = document.createElement('select');
+      selM.id = 'aiCfgModel';
+      if (!ids.length) {
+        var op0 = document.createElement('option');
+        op0.value = current || '';
+        op0.textContent = current || '(tidak ada model)';
+        selM.appendChild(op0);
+      } else {
+        if (current && ids.indexOf(current) < 0) {
+          var opC = document.createElement('option');
+          opC.value = current;
+          opC.textContent = current + ' (tersimpan)';
+          selM.appendChild(opC);
+        }
+        ids.forEach(function (id) {
+          var op = document.createElement('option');
+          op.value = id;
+          op.textContent = id;
+          selM.appendChild(op);
+        });
+        selM.value = (current && (ids.indexOf(current) >= 0 || true)) ? current : ids[0];
+        if (ids.indexOf(selM.value) < 0) selM.value = ids[0];
+      }
+      modelWrap.appendChild(selM);
+      var hint = document.createElement('span');
+      hint.className = 'hint';
+      hint.textContent = 'Daftar model dari provider. Pilih lalu Simpan.';
+      modelWrap.appendChild(hint);
+    }
 
     dlg.body.appendChild(aiField('Format API', sel, 'OpenAI-compatible: endpoint /chat/completions. Anthropic: /v1/messages.'));
     dlg.body.appendChild(aiField('Base URL', base, 'Contoh OpenAI: https://api.openai.com/v1 · Anthropic: https://api.anthropic.com. Slash di akhir dan /chat/completions ikut tertempel otomatis dibuang.'));
     dlg.body.appendChild(aiField('API Key', keyRow, 'Disimpan hanya di browser ini (localStorage "makalah.aiconfig.v1"), terpisah dari draf. Tidak ikut ke PDF.'));
-    dlg.body.appendChild(aiField('Model', model, 'Contoh: gpt-4o-mini atau claude-3-5-haiku-latest.'));
+    dlg.body.appendChild(aiField('Model', modelWrap, 'Setelah Tes Koneksi berhasil, daftar model provider muncul di sini.'));
+    dlg.body.appendChild(statusEl);
 
     dlg.foot.appendChild(aiBtn('Hapus Config', 'btn-danger', function () {
       if (!confirm('Hapus konfigurasi AI (termasuk API key) dari browser ini?')) return;
@@ -533,21 +582,51 @@
     }));
     dlg.foot.appendChild(aiBtn('Tes Koneksi', 'btn-ghost', function (e) {
       var c = read();
-      if (!c.key) { toast('Isi API key dulu.'); return; }
+      if (!c.key) { setStatus('Isi API key dulu.', 'err'); toast('Isi API key dulu.'); return; }
+      if (!c.base) { setStatus('Isi Base URL dulu.', 'err'); toast('Isi Base URL dulu.'); return; }
       var b = e.currentTarget;
       b.disabled = true;
       b.textContent = 'Menguji…';
+      setStatus('Menguji koneksi ke ' + c.base + ' …', 'info');
       aiTest(c).then(function (r) {
+        if (!r.ok) {
+          b.disabled = false;
+          b.textContent = 'Tes Koneksi';
+          setStatus('Gagal: ' + (r.error || 'tidak diketahui'), 'err');
+          toast(r.error || 'Tes koneksi gagal');
+          return;
+        }
+        setStatus('Koneksi OK (HTTP ' + (r.status || 200) + '). Memuat daftar model…', 'ok');
+        toast('Koneksi berhasil. Memuat model…');
+        return aiListModels(c).then(function (ids) {
+          b.disabled = false;
+          b.textContent = 'Tes Koneksi';
+          if (ids && ids.length) {
+            fillModelSelect(ids, c.model);
+            var pick = document.getElementById('aiCfgModel');
+            var chosen = pick ? pick.value : c.model;
+            c.model = chosen;
+            aiSave(c);
+            setStatus('Koneksi valid · ' + ids.length + ' model tersedia · terpilih: ' + chosen, 'ok');
+            toast('Koneksi valid. Pilih model lalu Simpan.');
+          } else {
+            /* Provider tidak memberi daftar → tetap input manual, tapi koneksi OK. */
+            aiSave(c);
+            setStatus('Koneksi valid · model tetap diisi manual (provider tidak mengirim daftar).', 'ok');
+            toast('Koneksi berhasil. Model ' + c.model + ' siap.');
+          }
+        });
+      }).catch(function (err) {
         b.disabled = false;
         b.textContent = 'Tes Koneksi';
-        if (r.ok) { toast('Koneksi berhasil. Model ' + r.model + ' siap dipakai.'); aiSave(c); }
-        else toast(r.error);
+        setStatus('Error: ' + (err && err.message ? err.message : String(err)), 'err');
+        toast('Tes koneksi gagal');
       });
     }));
     dlg.foot.appendChild(aiBtn('Simpan', 'btn-primary', function () {
       var c = read();
-      if (!c.key) { toast('Isi API key dulu.'); return; }
-      if (!c.model) { toast('Isi nama model dulu.'); return; }
+      if (!c.key) { setStatus('Isi API key dulu.', 'err'); toast('Isi API key dulu.'); return; }
+      if (!c.model) { setStatus('Pilih atau isi nama model dulu.', 'err'); toast('Isi nama model dulu.'); return; }
       base.value = c.base;
       aiSave(c);
       aiClose();
@@ -724,7 +803,7 @@
 
     run.secId = secId;
     aiOpen('Menulis dengan AI — ' + AI_SECTIONS[secId].title);
-    aiBusyView('✨ AI sedang menulis… (maks 60 detik)');
+    aiBusyView('AI sedang menulis… (maks 60 detik)');
 
     aiChat(cfg, AI_SYSTEM, aiPrompt(secId), 4000).then(function (r) {
       if (seq !== run.seq) return;
@@ -774,7 +853,7 @@
 
     dlg.foot.textContent = '';
     dlg.foot.appendChild(aiBtn('Batal', 'btn-ghost', aiClose));
-    var go = aiBtn('✨ Mulai', 'btn-primary', function () {
+    var go = aiBtn('Mulai', 'btn-primary', function () {
       var prompt = ta.value.trim();
       if (!prompt) { toast('Tulis prompt makalah dulu.'); ta.focus(); return; }
       aiProjectGenerate(prompt);
@@ -837,7 +916,7 @@
     project.values = {};
     project.busy = true;
     aiOpen('Menyusun makalah dengan AI');
-    aiBusyView('✨ AI sedang menyiapkan makalah…');
+    aiBusyView('AI sedang menyiapkan makalah…');
 
     var sections = Object.keys(AI_SECTIONS);
     var i = 0;
@@ -853,7 +932,7 @@
       dlg.body.textContent = '';
       var p = document.createElement('p');
       p.className = 'ai-status';
-      p.textContent = '✨ Menulis ' + sec.title + ' (' + i + '/' + sections.length + ')…';
+      p.textContent = 'Menulis ' + sec.title + ' (' + i + '/' + sections.length + ')…';
       dlg.body.appendChild(p);
 
       aiChat(cfg, AI_SYSTEM, aiPrompt(secId, prompt, project.values), 4000).then(function (r) {
@@ -908,28 +987,32 @@
 
   /* ---------- tombol pengaturan ---------- */
   function aiAddSettingsButtons() {
-    var dash = document.querySelector('#aiSettingsDash');
-    if (dash && !dash.dataset.aiBound) {
-      dash.dataset.aiBound = '1';
-      dash.addEventListener('click', aiOpenSettings);
+    var dash = document.querySelector('#viewDash .appbar-inner');
+    if (dash && !dash.querySelector('.ai-settings-dash')) {
+      var b1 = document.createElement('button');
+      b1.type = 'button';
+      b1.className = 'btn-ghost ai-settings-dash';
+      b1.innerHTML = '<i class="fa-solid fa-sliders" aria-hidden="true"></i><span class="btn-label"> Pengaturan AI</span>';
+      b1.addEventListener('click', aiOpenSettings);
+      dash.appendChild(b1);
     }
-
-    var ed = document.querySelector('#aiEditorActions');
-    if (!ed) ed = document.querySelector('#viewEditor .editor-appbar-inner');
+    var ed = document.querySelector('#viewEditor .editor-appbar-inner');
+    var actions = ed ? ed.querySelector('.editor-actions') : null;
     if (ed && !ed.querySelector('.ai-start-edit')) {
       var start = document.createElement('button');
       start.type = 'button';
       start.className = 'btn-primary ai-start-edit';
-      start.textContent = '✨ Mulai AI';
+      start.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span class="btn-label"> Mulai AI</span>';
       start.title = 'Masukkan satu prompt untuk menyusun seluruh makalah';
       start.addEventListener('click', aiProjectOpen);
-      ed.appendChild(start);
+      if (actions) actions.appendChild(start);
+      else ed.appendChild(start);
     }
     if (ed && !ed.querySelector('.ai-settings-edit')) {
       var b2 = document.createElement('button');
       b2.type = 'button';
       b2.className = 'btn-mini icon-btn ai-settings-edit';
-      b2.textContent = '⚙';
+      b2.innerHTML = '<i class="fa-solid fa-gear" aria-hidden="true"></i>';
       b2.title = 'Pengaturan AI';
       b2.setAttribute('aria-label', 'Pengaturan AI');
       b2.addEventListener('click', aiOpenSettings);

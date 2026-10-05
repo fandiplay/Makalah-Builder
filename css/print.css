@@ -1,6 +1,4 @@
-/* print.css: mesin dokumen. Semua satuan dalam cm supaya identik di layar & di cetak.
-   Format mengikuti template makalah: A4, Times New Roman 12pt, spasi 1,5,
-   margin kiri 4 cm, atas/kanan/bawah 3 cm. */
+/* print.css: mesin dokumen. Semua satuan dalam cm supaya identik di layar & di cetak. */
 
 :root {
   --m-top: 3cm;
@@ -10,14 +8,7 @@
   --doc-font: "Times New Roman", Times, "Liberation Serif", serif;
 }
 
-@page {
-  size: A4;
-  /* Margin dibawa oleh .sheet, bukan oleh @page: nomor halaman & blok
-     "BAB pertama" butuh ruang di dalam pita margin; isi @page tidak pernah
-     dicetak di area margin. Nilai 0cm di sini mencegah margin ganda dari
-     dialog cetak. */
-  margin: 0;
-}
+@page { size: A4; margin: 0; }
 
 .sheets { transform-origin: 0 0; }
 
@@ -30,11 +21,11 @@
   margin: 0 0 14px;
   background: var(--paper);
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .28); /* tepi kertas di atas latar meja */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .28);
 }
 
 .pg-body {
-  height: 23.7cm; /* 29.7 - 3 - 3; dipakai juga sebagai ambang pagination */
+  height: 23.7cm;
   overflow: hidden;
   font-family: var(--doc-font);
   font-size: 12pt;
@@ -45,7 +36,6 @@
 
 .sheets.building { position: fixed; top: 0; left: -20000px; visibility: hidden; }
 
-/* ---------- blok isi ---------- */
 .para { margin: 0; text-indent: 1.2cm; text-align: justify; }
 .no-indent { text-indent: 0; }
 .h-bab { margin: 0; font-weight: 700; text-align: center; text-transform: uppercase; }
@@ -57,8 +47,6 @@
 .empty-slot { margin: 0; color: #666; font-style: italic; }
 
 /* ---------- cover ---------- */
-/* Cover memakai flex kolom supaya baris tahun ajaran (SMA) bisa menempel di
-   dasar halaman dengan margin-top:auto tanpa mengubah pagination isi. */
 .cover .pg-body {
   display: flex;
   flex-direction: column;
@@ -110,16 +98,23 @@
 .cover .campus-oleh { margin-top: 0 !important; font-weight: 700; }
 .cover .campus-date { font-weight: 700; }
 
-/* SMA: tahun ajaran tetap menempel di bawah, tanpa membuat blok lain renggang. */
-.cover.sma .cover-tahun {
+/* SMA: kelas → sekolah → kota → tahun ajaran menempel di dasar halaman. */
+.cover.sma .sma-bottom-start {
   margin-top: auto !important;
-  padding-top: 7pt;
+  padding-top: 12pt;
+}
+.cover.sma .cover-tahun {
+  margin-top: 2pt !important;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .04em;
 }
 
-/* Spacing eksplisit untuk cover kuliah, mengikuti referensi yang dilampirkan. */
+/* Kuliah: identitas (prodi/fakultas/institusi/kota) menempel di dasar halaman. */
+.cover.kampus .campus-bottom-start {
+  margin-top: auto !important;
+  padding-top: 12pt;
+}
 .cover.kampus .campus-gap-1 { height: 28pt; }
 .cover.kampus .logo { margin: 46pt 0 42pt; }
 .cover.kampus .campus-bottom-gap { height: 48pt; }
@@ -130,23 +125,27 @@
 .cover.kampus .campus-members-8 { height: 28pt; }
 
 .cover .logo { width: 100%; }
+/* SMA: jarak ~30px antara logo dan teks atas/bawah */
+.cover.sma .logo {
+  margin: 30px 0 30px !important;
+}
 .cover .logo img {
   display: block;
   margin: 0 auto;
-  width: 3.4cm;
-  height: 3.4cm;
+  width: 4.8cm;
+  height: 4.8cm;
   object-fit: contain;
 }
-.cover .logo-sma.logo-count-4 img,
+.cover .logo-sma img { width: 4.8cm; height: 4.8cm; }
 .cover .logo-sma.logo-count-5 img,
-.cover .logo-sma.logo-count-6 img { width: 2.8cm; height: 2.8cm; }
-.cover .logo-sma.logo-count-7 img { width: 2.4cm; height: 2.4cm; }
+.cover .logo-sma.logo-count-6 img { width: 4.2cm; height: 4.2cm; }
+.cover .logo-sma.logo-count-7 img { width: 3.6cm; height: 3.6cm; }
 .cover .logo-kampus img { width: 3.8cm; height: 3.8cm; }
 
 .cover .logo .logo-ph {
   margin: 0 auto;
-  width: 3.4cm;
-  height: 3.4cm;
+  width: 4.8cm;
+  height: 4.8cm;
   border: 1px dashed #999;
   display: flex;
   align-items: center;
@@ -166,7 +165,6 @@
 .cover .gap-2 { height: 6pt; }
 .cover .gap-3 { height: 10pt; }
 
-/* ---------- kata pengantar ---------- */
 .cover-arab { font-size: 14pt; line-height: 1.6; margin: 0 0 6pt; }
 .sign { text-align: right; text-indent: 0; margin: 0; }
 .sign-space { height: 48pt; }
@@ -175,8 +173,8 @@
 /* ---------- daftar isi ---------- */
 .toc-item {
   display: flex;
-  align-items: flex-end;
-  gap: .25cm;
+  align-items: baseline;
+  gap: 0;
   margin: 0;
   text-indent: 0;
   text-align: left;
@@ -184,35 +182,37 @@
 .toc-item .toc-label {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: calc(100% - 1.8cm);
+  max-width: calc(100% - 1.6cm);
   overflow-wrap: anywhere;
   line-height: 1.5;
+  padding-right: 0.15cm;
 }
 .toc-item .toc-dots {
-  flex: 1 1 1cm;
-  min-width: 1cm;
-  border-bottom: 1px dotted #000;
-  transform: translateY(-.18em);
-  margin-bottom: .12em;
+  flex: 1 1 0.8cm;
+  min-width: 0.8cm;
+  height: 0;
+  border-bottom: 1.2px dotted #000;
+  align-self: baseline;
+  position: relative;
+  top: -0.35em;
+  margin: 0 0.12cm;
 }
 .toc-item .toc-page {
   flex: none;
-  min-width: .42cm;
+  min-width: 0.5cm;
   white-space: nowrap;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  padding-left: 0.1cm;
 }
 .toc-item.lvl-2 { padding-left: 1.2cm; }
 
-/* ---------- nomor halaman ---------- */
 .pgnum {
   position: absolute;
   font-family: var(--doc-font);
   font-size: 12pt;
   color: #000;
 }
-/* Footer: rapat ke tepi bawah kertas (0,8 cm dari dasar halaman).
-   Nilai lama 1.2cm membuat nomor tampak menggantung jauh dari pembatas. */
 .pgnum.bottom {
   top: auto !important;
   bottom: 0.8cm !important;
@@ -222,11 +222,8 @@
   text-align: center;
 }
 
-/* ============================ CETAK ============================ */
 @media print {
   html, body { margin: 0; padding: 0; background: #fff; }
-
-  /* Sembunyikan chrome, paksa wadah kertas jadi alur normal */
   #viewDash, .appbar, .tabbar, #paneForm, .zoombar, #toast { display: none !important; }
   #viewEditor, #panePaper, #paperWrap, #sheets {
     display: block !important;
@@ -245,7 +242,6 @@
     backdrop-filter: none !important;
   }
   .sheets.building { position: static !important; left: auto !important; visibility: visible !important; }
-
   .sheet { box-shadow: none; margin: 0; break-inside: avoid; }
   .sheet + .sheet { break-before: page; }
 }

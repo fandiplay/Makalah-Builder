@@ -37,6 +37,7 @@ function newDoc() {
     updatedAt: Date.now(),
     judul: '', subjudul: '',
     matkul: '', dosen: '',
+    sembunyikanDosen: true,
     logo: null,
     anggota: [{ nama: '', nim: '' }],
     prodi: '', fakultas: '',
@@ -52,8 +53,6 @@ function newDoc() {
 }
 
 /* ---------- default per template ---------- */
-/* Style dokumen (A4, TNR 12pt, spasi 1,5, margin 4/3/3/3) SAMA untuk kedua
-   template. Yang berbeda hanya field identitas dan susunan cover. */
 function newDocFor(tpl) {
   const doc = newDoc();
   return tpl === 'kampus' ? Object.assign(doc, newKampus()) : Object.assign(doc, newSma());
@@ -65,6 +64,7 @@ function newSma() {
     jenisKarya: 'Makalah',
     judul: '', subjudul: '',
     mapel: '', guru: '',
+    sembunyikanGuru: true,
     logo: null,
     siswa: '', siswaAnggota: [{ nama: '', absen: '' }], kelas: '', absen: '',
     sekolah: '', kota: '',
@@ -82,6 +82,7 @@ function newKampus() {
     template: 'kampus',
     jenisKarya: '',
     matkul: '', dosen: '',
+    sembunyikanDosen: true,
     anggota: [{ nama: '', nim: '' }],
     prodi: '', fakultas: '',
     institusi: 'Institut Agama Islam Negeri Antasari Banjarmasin',
@@ -91,7 +92,6 @@ function newKampus() {
   };
 }
 
-/* Tahun ajaran berganti tiap Juli: sebelum Juli -> tahun lalu/ini. */
 function defaultTahunAjaran() {
   const d = new Date();
   const y = d.getFullYear();
@@ -99,9 +99,6 @@ function defaultTahunAjaran() {
   return a + '/' + (a + 1);
 }
 
-/* localStorage bisa menolak (mode privat, kuota penuh, iframe tanpa storage).
-   Baca/write dibungkus try-catch dan jatuh ke memori: draf tetap bisa diedit,
-   app.js memberi tahu lewat Store.degraded saat penyimpanan ditolak. */
 const Store = {
   degraded: false,
   mem: { docs: {}, current: null },
