@@ -390,7 +390,7 @@ function renderList(host, f) {
       inp.value = item || '';
       row.appendChild(inp);
     } else {
-      (f.t === 'members' ? [['nama', 'Nama lengkap']]
+      (f.t === 'members' ? [['nama', 'Nama lengkap (NIM dalam kurung, opsional)']]
         : f.t === 'membersSma' ? [['nama', 'Nama lengkap'], ['absen', 'No. absen (opsional)']]
         : f.t === 'subbab' ? [['judul', 'Judul subbab'], ['isi', 'Isi uraian (baris kosong = paragraf baru)']]
         : REFS).forEach(([k, ph]) => {
