@@ -516,7 +516,7 @@
       aiClose();
     });
 
-    dlg = { ov: ov, title: title, body: body, foot: foot, onClose: null };
+    dlg = { ov: ov, title: title, body: body, foot: foot, closeBtn: close, onClose: null };
     return dlg;
   }
 
@@ -526,6 +526,7 @@
     d.body.textContent = '';
     d.foot.textContent = '';
     d.onClose = onClose || null;
+    if (d.closeBtn) d.closeBtn.style.display = '';
     d.ov.classList.remove('is-hidden');
     d.ov.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
@@ -682,13 +683,12 @@
       search.id = 'aiModelSearch';
       search.placeholder = 'Cari model…';
       search.autocomplete = 'off';
-      search.style.marginBottom = '6px';
+      search.className = 'ai-model-search';
 
       var selM = document.createElement('select');
       selM.id = 'aiCfgModel';
-      selM.size = Math.min(8, Math.max(4, Math.min(cachedModelIds.length, 10)));
-      selM.style.width = '100%';
-      selM.style.minHeight = '120px';
+      selM.className = 'ai-model-select';
+      /* size=1 = dropdown native, lebih rapi di HP */
 
       function renderOpts(filter) {
         var q = String(filter || '').trim().toLowerCase();
@@ -829,6 +829,7 @@
 
   function aiBusyView(msg) {
     run.busy = true;
+    if (dlg && dlg.closeBtn) dlg.closeBtn.style.display = 'none';
     dlg.body.textContent = '';
     var p = document.createElement('p');
     p.className = 'ai-status';
@@ -837,7 +838,7 @@
     var hint = document.createElement('p');
     hint.className = 'hint';
     hint.style.marginTop = '8px';
-    hint.textContent = 'Klik di luar kotak atau tombol Hentikan untuk membatalkan.';
+    hint.textContent = 'Tekan Hentikan untuk membatalkan.';
     dlg.body.appendChild(hint);
     dlg.foot.textContent = '';
     dlg.foot.appendChild(aiBtn('Hentikan', 'btn-danger', function () {
@@ -850,8 +851,13 @@
     }));
   }
 
+  function aiShowCloseBtn() {
+    if (dlg && dlg.closeBtn) dlg.closeBtn.style.display = '';
+  }
+
   function aiErrorView(msg, onAgain) {
     run.busy = false;
+    aiShowCloseBtn();
     dlg.body.textContent = '';
     var p = document.createElement('p');
     p.className = 'ai-status ai-status-err';
@@ -1065,6 +1071,9 @@
 
   function aiProjectPreview() {
     project.busy = false;
+    run.busy = false;
+    aiShowCloseBtn();
+    project.busy = false;
     dlg.title.textContent = 'Hasil AI — Periksa sebelum diterapkan';
     dlg.body.textContent = '';
 
@@ -1131,11 +1140,7 @@
       }
       var secId = sections[i++];
       var sec = AI_SECTIONS[secId];
-      dlg.body.textContent = '';
-      var p = document.createElement('p');
-      p.className = 'ai-status';
-      p.textContent = 'Menulis ' + sec.title + ' (' + i + '/' + sections.length + ')…';
-      dlg.body.appendChild(p);
+      aiBusyView('Menulis ' + sec.title + ' (' + i + '/' + sections.length + ')…');
 
       aiChat(cfg, AI_SYSTEM, aiPrompt(secId, prompt, project.values), 4000).then(function (r) {
         if (seq !== project.seq) return;
