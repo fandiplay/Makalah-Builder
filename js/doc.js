@@ -28,7 +28,7 @@ const Doc = {
       kelas: doc.kelas, siswa: doc.siswa,
       kota: doc.kota, tahun: sma ? doc.tahunAjaran : doc.tahun,
       tahunAjaran: doc.tahunAjaran,
-      penulis: doc.kata.penulis || (sma ? doc.siswa : '') || 'Tim Penulis'
+      penulis: doc.kata.penulis || (sma ? ((doc.siswaAnggota || []).map(a => a.nama).filter(Boolean).join(', ')) : '') || 'Tim Penulis'
     };
     return String(text).replace(/\{\{(\w+)\}\}/g, (m, k) => {
       const v = vals[k];
@@ -51,20 +51,31 @@ const Doc = {
     if ((doc.jenisKarya || '').trim()) push(el('p', 'c-jenis', doc.jenisKarya.trim().toUpperCase()), true);
     push(el('p', 'c-judul', doc.judul.trim().toUpperCase() || '[JUDUL MAKALAH]'));
     if (doc.subjudul.trim()) push(el('p', 'c-sub', doc.subjudul.trim()));
-    // Judul harus di atas logo: logoNode dipasang setelah blok judul.
-    push(logoNode(doc.logo, 'Logo Sekolah'));
-    push(el('p', 'gap-2'));
+
+    const students = Array.isArray(doc.siswaAnggota) && doc.siswaAnggota.length
+      ? doc.siswaAnggota
+      : [{ nama: doc.siswa || '', absen: doc.absen || '' }];
+
+    /* Logo tetap di tengah dan dibuat lebih kecil agar daftar siswa panjang tetap muat. */
+    const logo = logoNode(doc.logo, 'Logo Sekolah');
+    logo.classList.add('logo-sma', 'logo-count-' + Math.min(students.length, 7));
+    push(logo);
+    push(el('p', 'gap-1'));
     push(el('p', 'no-indent', 'Disusun oleh:'), true);
-    push(el('p', 'c-siswa', doc.siswa.trim() || '[nama siswa]'), true);
-    push(el('p', 'no-indent', ['Kelas ' + (doc.kelas.trim() || '[kelas]'),
-      doc.absen.trim() ? 'No. Absen ' + doc.absen.trim() : ''].filter(Boolean).join(' · ')), true);
-    push(el('p', 'gap-3'));
+
+    students.forEach((s, i) => {
+      const name = String(s.nama || '').trim() || '[nama siswa]';
+      const absen = String(s.absen || '').trim();
+      push(el('p', 'c-siswa' + (students.length > 3 ? ' c-member-compact' : ''), absen ? name + ' (Absen ' + absen + ')' : name), true);
+    });
+
+    push(el('p', 'gap-2'));
+    push(el('p', 'no-indent', 'Kelas ' + (doc.kelas.trim() || '[kelas]')), true);
     push(el('p', 'no-indent', 'Mata Pelajaran: ' + (doc.mapel.trim() || '[mata pelajaran]')), true);
     push(el('p', 'no-indent', 'Guru Pembimbing: ' + (doc.guru.trim() || '[nama guru, gelar]')), true);
-    push(el('p', 'gap-3'));
+    push(el('p', 'gap-2'));
     push(el('p', 'c-kampus', doc.sekolah.trim().toUpperCase() || '[NAMA SEKOLAH]'), true);
     push(el('p', 'no-indent', doc.kota.trim() || '[kota]'), true);
-    // Baris tahun ajaran menempel di dasar halaman (margin-top:auto di print.css).
     push(el('p', 'cover-tahun', 'TAHUN AJARAN ' + (doc.tahunAjaran.trim() || defaultTahunAjaran())), true);
     return b;
   },
@@ -79,21 +90,24 @@ const Doc = {
     push(el('p', 'no-indent', 'MAKALAH'), true);
     push(el('p', 'no-indent', 'Disusun untuk Memenuhi Tugas Mata Kuliah'));
     push(el('p', 'no-indent', doc.matkul.trim() || '[mata kuliah]'), true);
-    push(el('p', 'no-indent', 'Dosen Pengampu: ' + (doc.dosen.trim() || '[nama dosen, gelar]')));
-    push(el('p', 'gap-2'));
-    push(el('p', 'no-indent', 'Disusun oleh:'));
+    push(el('p', 'no-indent', 'Dosen Pengampu: ' + (doc.dosen.trim() || '[nama dosen, gelar]')), true);
+
+    /* Logo kampus harus berada di tengah tepat sebelum "Disusun oleh". */
+    const logo = logoNode(doc.logo, 'Logo Kampus');
+    logo.classList.add('logo-kampus');
+    push(logo, true);
+    push(el('p', 'gap-1'));
+    push(el('p', 'no-indent', 'Disusun oleh:'), true);
+
     doc.anggota.forEach((a, i) => {
-      push(el('p', 'c-anggota', (i + 1) + '. ' + (a.nama.trim() || '[nama anggota]')), true);
-      push(el('p', 'c-nim', a.nim.trim() ? 'NIM. ' + a.nim.trim() : 'NIM. [nim]'));
+      push(el('p', 'c-anggota', (i + 1) + '. ' + (String(a.nama || '').trim() || '[nama anggota]')), true);
     });
-    push(el('p', 'gap-3'));
+
+    push(el('p', 'gap-2'));
     push(el('p', 'c-kampus', doc.prodi.trim() || '[program studi]'), true);
     push(el('p', 'no-indent', doc.fakultas.trim() || '[fakultas]'), true);
     push(el('p', 'no-indent', doc.institusi.trim() || '[institusi]'), true);
     push(el('p', 'no-indent', [doc.kota.trim() || '[kota]', doc.tahun.trim() || String(new Date().getFullYear())].join(', ')), false);
-
-    // Logo diletakkan di paling atas cover (template kampus).
-    b.unshift({ node: logoNode(doc.logo, 'Logo Kampus'), keep: true });
     return b;
   },
 
