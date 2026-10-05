@@ -59,35 +59,112 @@
 /* ---------- cover ---------- */
 /* Cover memakai flex kolom supaya baris tahun ajaran (SMA) bisa menempel di
    dasar halaman dengan margin-top:auto tanpa mengubah pagination isi. */
-.cover .pg-body { display: flex; flex-direction: column; text-align: center; }
-.cover .para { text-indent: 0; text-align: center; }
-.cover .c-jenis { margin: 0 0 18pt; font-size: 12pt; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
-.cover .c-judul { font-size: 16pt; font-weight: 700; text-transform: uppercase; margin: 0; }
-.cover .c-sub { font-style: italic; }
-.cover .c-siswa { margin-top: 2pt; font-weight: 700; }
-.cover .c-member-compact { font-size: 11pt; margin-top: 1pt; }
-.cover .c-anggota { margin-top: 1pt; }
-.cover .c-kampus { margin-top: 2pt; }
-/* Baris tahun ajaran: menempel di dasar area isi (sesudah semua blok cover). */
-.cover .cover-tahun { margin-top: auto; padding-top: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
-.cover .logo { width: 100%; margin: 7pt 0; }
-.cover .logo img { display: block; margin: 0 auto; width: 3.6cm; height: 3.6cm; object-fit: contain; }
-.cover .logo-sma.logo-count-4 img, .cover .logo-sma.logo-count-5 img,
-.cover .logo-sma.logo-count-6 img, .cover .logo-sma.logo-count-7 img { width: 2.8cm; height: 2.8cm; }
+.cover .pg-body {
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+.cover .pg-body > p {
+  margin: 0;
+  padding: 0;
+  text-indent: 0;
+  text-align: center;
+}
+.cover .c-jenis {
+  margin: 0 0 10pt !important;
+  font-size: 12pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.cover .c-judul {
+  margin: 0 !important;
+  font-size: 16pt;
+  line-height: 1.35;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.cover .c-sub {
+  margin-top: 3pt !important;
+  font-style: italic;
+}
+.cover .c-siswa {
+  margin-top: 2pt !important;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.cover .c-member-compact {
+  font-size: 11pt;
+  margin-top: 1pt !important;
+}
+.cover .c-anggota {
+  margin-top: 1pt !important;
+  line-height: 1.25;
+}
+.cover .c-kampus {
+  margin-top: 2pt !important;
+  font-weight: 700;
+}
+.cover .campus-dosen-label { margin-top: 3pt !important; }
+.cover .campus-dosen { font-weight: 700; }
+.cover .campus-oleh { margin-top: 0 !important; font-weight: 700; }
+.cover .campus-date { font-weight: 700; }
+
+/* SMA: tahun ajaran tetap menempel di bawah, tanpa membuat blok lain renggang. */
+.cover.sma .cover-tahun {
+  margin-top: auto !important;
+  padding-top: 7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* Spacing eksplisit untuk cover kuliah, mengikuti referensi yang dilampirkan. */
+.cover.kampus .campus-gap-1 { height: 28pt; }
+.cover.kampus .logo { margin: 46pt 0 42pt; }
+.cover.kampus .campus-bottom-gap { height: 48pt; }
+.cover.kampus .campus-members-4,
+.cover.kampus .campus-members-5,
+.cover.kampus .campus-members-6,
+.cover.kampus .campus-members-7,
+.cover.kampus .campus-members-8 { height: 28pt; }
+
+.cover .logo { width: 100%; }
+.cover .logo img {
+  display: block;
+  margin: 0 auto;
+  width: 3.4cm;
+  height: 3.4cm;
+  object-fit: contain;
+}
+.cover .logo-sma.logo-count-4 img,
+.cover .logo-sma.logo-count-5 img,
+.cover .logo-sma.logo-count-6 img { width: 2.8cm; height: 2.8cm; }
 .cover .logo-sma.logo-count-7 img { width: 2.4cm; height: 2.4cm; }
 .cover .logo-kampus img { width: 3.8cm; height: 3.8cm; }
+
 .cover .logo .logo-ph {
   margin: 0 auto;
-  width: 3.6cm; height: 3.6cm;
+  width: 3.4cm;
+  height: 3.4cm;
   border: 1px dashed #999;
-  display: flex; align-items: center; justify-content: center;
-  white-space: pre-line; text-align: center;
-  font-size: 8pt; color: #666; letter-spacing: .02em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: pre-line;
+  text-align: center;
+  font-size: 8pt;
+  color: #666;
+  letter-spacing: .02em;
 }
-.cover .gap-1 { height: 10pt; }
-.cover .gap-2 { height: 8pt; }
-.cover .gap-3 { height: 14pt; }
-.cover .logo-kampus + .gap-1 { height: 6pt; }
+.cover.kampus .logo .logo-ph {
+  width: 3.8cm;
+  height: 3.8cm;
+}
+
+.cover .gap-1 { height: 7pt; }
+.cover .gap-2 { height: 6pt; }
+.cover .gap-3 { height: 10pt; }
 
 /* ---------- kata pengantar ---------- */
 .cover-arab { font-size: 14pt; line-height: 1.6; margin: 0 0 6pt; }
@@ -127,8 +204,18 @@
   font-size: 12pt;
   color: #000;
 }
-.pgnum.top { top: 1.5cm; right: 3cm; }
-.pgnum.bottom { bottom: 1.5cm; left: 0; right: 0; text-align: center; }
+.pgnum.top {
+  top: 1.5cm;
+  right: 3cm;
+}
+.pgnum.bottom {
+  top: auto !important;
+  bottom: 1.2cm !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100%;
+  text-align: center;
+}
 
 /* ============================ CETAK ============================ */
 @media print {
