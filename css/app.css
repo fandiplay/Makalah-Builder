@@ -196,13 +196,6 @@ body {
   .editor-actions .tpl-pick { min-width: 0; }
 }
 
-@media (max-width: 420px) {
-  .editor-actions { grid-template-columns: 1fr; }
-  .editor-actions .tpl-pick,
-  .editor-actions .editor-print,
-  .ai-editor-actions > * { width: 100%; }
-}
-
 /* ---------- tabbar ---------- */
 .tabbar {
   position: sticky; top: 0; z-index: 40;
