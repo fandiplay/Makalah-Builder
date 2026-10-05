@@ -14,6 +14,7 @@
 
   var AI_KEY = 'makalah.aiconfig.v1';
   var AI_TIMEOUT = 60000; /* 60 detik */
+  var aiActiveController = null;
 
   var AI_DEFAULTS = {
     openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
@@ -67,15 +68,30 @@
   /* ---------- pemanggilan API ---------- */
   function aiFetch(url, opts) {
     var ac = new AbortController();
+    aiActiveController = ac;
     var timedOut = false;
     var timer = setTimeout(function () { timedOut = true; ac.abort(); }, AI_TIMEOUT);
-    var done = function (v) { clearTimeout(timer); return v; };
+    var done = function (v) {
+      clearTimeout(timer);
+      if (aiActiveController === ac) aiActiveController = null;
+      return v;
+    };
     return fetch(url, Object.assign({ signal: ac.signal }, opts)).then(
       function (r) {
         return r.text().then(function (txt) { return done({ status: r.status, text: txt }); });
       },
-      function () { return done({ status: 0, text: '', net: true, timedOut: timedOut }); }
+      function (err) {
+        if (err && err.name === 'AbortError') return done({ status: 0, text: '', net: true, aborted: true, timedOut: timedOut });
+        return done({ status: 0, text: '', net: true, timedOut: timedOut });
+      }
     );
+  }
+
+  function aiAbortCurrent() {
+    if (aiActiveController) {
+      try { aiActiveController.abort(); } catch (e) {}
+      aiActiveController = null;
+    }
   }
 
   /* Status HTTP dipetakan ke pesan Bahasa Indonesia yang ramah. */
@@ -90,6 +106,7 @@
   }
 
   function aiErrMsg(r) {
+    if (r.aborted) return 'Proses AI dihentikan.';
     if (r.net && r.timedOut) return 'Server AI tidak menjawab dalam 60 detik. Coba lagi atau ganti model.';
     if (r.net) return 'Gagal menghubungi server AI. Periksa internet, Base URL, dan izin CORS server.';
     if (r.status < 200 || r.status >= 300) return aiHttpMsg(r.status);
@@ -354,7 +371,7 @@
     close.className = 'btn-mini icon-btn ai-close';
     close.setAttribute('aria-label', 'Tutup');
     close.textContent = '×';
-    close.addEventListener('click', aiClose);
+    close.addEventListener('click', aiRequestClose);
     head.appendChild(close);
 
     var body = document.createElement('div');
@@ -369,8 +386,8 @@
     ov.appendChild(sheet);
     document.body.appendChild(ov);
 
-    ov.addEventListener('click', function (e) { if (e.target === ov) aiClose(); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !ov.classList.contains('is-hidden')) aiClose(); });
+    ov.addEventListener('click', function (e) { if (e.target === ov) aiRequestClose(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !ov.classList.contains('is-hidden')) aiRequestClose(); });
 
     dlg = { ov: ov, title: title, body: body, foot: foot, onClose: null };
     return dlg;
@@ -384,13 +401,32 @@
     d.onClose = onClose || null;
     d.ov.classList.remove('is-hidden');
     d.ov.setAttribute('aria-hidden', 'false');
+    d.ov.querySelector('.ai-sheet').classList.toggle('ai-busy', !!(typeof run !== 'undefined' && run && run.busy) || !!(typeof project !== 'undefined' && project && project.busy));
     document.body.style.overflow = 'hidden';
   }
 
-  function aiClose() {
+  function aiRequestClose() {
     if (!dlg) return;
+    var busy = (typeof run !== 'undefined' && run && run.busy) || (typeof project !== 'undefined' && project && project.busy);
+    if (busy) {
+      var ok = confirm('AI masih sedang menyusun makalah. Tutup sekarang dan hentikan proses AI?');
+      if (!ok) return;
+      if (typeof run !== 'undefined' && run) { run.seq++; run.busy = false; }
+      if (typeof project !== 'undefined' && project) { project.seq++; project.busy = false; }
+      aiAbortCurrent();
+      aiClose(true);
+      toast('Proses AI dihentikan.');
+      return;
+    }
+    aiClose(true);
+  }
+
+  function aiClose(force) {
+    if (!dlg) return;
+    if (!force) return aiRequestClose();
     dlg.ov.classList.add('is-hidden');
     dlg.ov.setAttribute('aria-hidden', 'true');
+    dlg.ov.querySelector('.ai-sheet').classList.remove('ai-busy');
     document.body.style.overflow = '';
     var cb = dlg.onClose;
     dlg.onClose = null;
@@ -872,16 +908,14 @@
 
   /* ---------- tombol pengaturan ---------- */
   function aiAddSettingsButtons() {
-    var dash = document.querySelector('#viewDash .appbar-inner');
-    if (dash && !dash.querySelector('.ai-settings-dash')) {
-      var b1 = document.createElement('button');
-      b1.type = 'button';
-      b1.className = 'btn-ghost ai-settings-dash';
-      b1.textContent = '⚙ Pengaturan AI';
-      b1.addEventListener('click', aiOpenSettings);
-      dash.appendChild(b1);
+    var dash = document.querySelector('#aiSettingsDash');
+    if (dash && !dash.dataset.aiBound) {
+      dash.dataset.aiBound = '1';
+      dash.addEventListener('click', aiOpenSettings);
     }
-    var ed = document.querySelector('#viewEditor .editor-appbar-inner');
+
+    var ed = document.querySelector('#aiEditorActions');
+    if (!ed) ed = document.querySelector('#viewEditor .editor-appbar-inner');
     if (ed && !ed.querySelector('.ai-start-edit')) {
       var start = document.createElement('button');
       start.type = 'button';
