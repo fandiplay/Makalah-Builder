@@ -106,7 +106,8 @@ const Doc = {
       push(el('p', 'c-anggota', (i + 1) + '. ' + (String(a.nama || '').trim() || '[nama anggota]')), true);
     });
 
-    push(el('p', 'campus-bottom-gap'));
+    const memberCount = Math.max(1, Math.min(doc.anggota.length || 1, 8));
+    push(el('p', 'campus-bottom-gap campus-members-' + memberCount));
     push(el('p', 'c-kampus', doc.prodi.trim() || '[program studi]'), true);
     push(el('p', 'no-indent', doc.fakultas.trim() || '[fakultas]'), true);
     push(el('p', 'no-indent', doc.institusi.trim() || '[institusi]'), true);
