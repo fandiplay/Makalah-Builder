@@ -655,43 +655,108 @@
       statusEl.style.color = kind === 'ok' ? 'var(--primary)' : (kind === 'err' ? 'var(--danger)' : 'var(--text-muted)');
     }
 
+    var cachedModelIds = [];
+
     function fillModelSelect(ids, current) {
+      cachedModelIds = Array.isArray(ids) ? ids.slice() : [];
       modelWrap.textContent = '';
+
+      if (!cachedModelIds.length) {
+        var model = document.createElement('input');
+        model.type = 'text';
+        model.id = 'aiCfgModel';
+        model.value = current || '';
+        model.placeholder = 'Ketik ID model manual';
+        model.autocomplete = 'off';
+        model.spellcheck = false;
+        modelWrap.appendChild(model);
+        var hint0 = document.createElement('span');
+        hint0.className = 'hint';
+        hint0.textContent = 'Provider tidak menyediakan daftar model. Ketik ID manual.';
+        modelWrap.appendChild(hint0);
+        return;
+      }
+
+      var search = document.createElement('input');
+      search.type = 'search';
+      search.id = 'aiModelSearch';
+      search.placeholder = 'Cari model…';
+      search.autocomplete = 'off';
+      search.style.marginBottom = '6px';
+
       var selM = document.createElement('select');
       selM.id = 'aiCfgModel';
-      if (!ids.length) {
-        var op0 = document.createElement('option');
-        op0.value = current || '';
-        op0.textContent = current || '(tidak ada model)';
-        selM.appendChild(op0);
-      } else {
-        if (current && ids.indexOf(current) < 0) {
-          var opC = document.createElement('option');
-          opC.value = current;
-          opC.textContent = current + ' (tersimpan)';
-          selM.appendChild(opC);
+      selM.size = Math.min(8, Math.max(4, Math.min(cachedModelIds.length, 10)));
+      selM.style.width = '100%';
+      selM.style.minHeight = '120px';
+
+      function renderOpts(filter) {
+        var q = String(filter || '').trim().toLowerCase();
+        var list = cachedModelIds.filter(function (id) {
+          return !q || id.toLowerCase().indexOf(q) >= 0;
+        });
+        list.sort(function (a, b) {
+          var af = /:free$/i.test(a) ? 0 : 1;
+          var bf = /:free$/i.test(b) ? 0 : 1;
+          if (af !== bf) return af - bf;
+          return a.localeCompare(b);
+        });
+        selM.textContent = '';
+        if (!list.length) {
+          var empty = document.createElement('option');
+          empty.value = '';
+          empty.textContent = '(tidak ada yang cocok)';
+          selM.appendChild(empty);
+          return;
         }
-        ids.forEach(function (id) {
+        list.forEach(function (id) {
           var op = document.createElement('option');
           op.value = id;
           op.textContent = id;
           selM.appendChild(op);
         });
-        selM.value = (current && (ids.indexOf(current) >= 0 || true)) ? current : ids[0];
-        if (ids.indexOf(selM.value) < 0) selM.value = ids[0];
+        if (current && list.indexOf(current) >= 0) selM.value = current;
+        else selM.value = list[0];
       }
+
+      renderOpts('');
+      search.addEventListener('input', function () { renderOpts(search.value); });
+      modelWrap.appendChild(search);
       modelWrap.appendChild(selM);
       var hint = document.createElement('span');
       hint.className = 'hint';
-      hint.textContent = 'Daftar model dari provider. Pilih lalu Simpan.';
+      hint.textContent = cachedModelIds.length + ' model tersedia. Cari/pilih lalu Simpan.';
       modelWrap.appendChild(hint);
     }
 
+    function tryAutoLoadModels() {
+      var c = read();
+      if (!c.key || !c.base) return;
+      setStatus('Memuat daftar model…', '');
+      aiListModels(c).then(function (ids) {
+        if (!ids || !ids.length) {
+          setStatus('Key/URL terisi, provider tidak memberi daftar model. Ketik manual.', '');
+          return;
+        }
+        var curEl = document.getElementById('aiCfgModel');
+        var cur = curEl ? String(curEl.value || '').trim() : c.model;
+        fillModelSelect(ids, cur || c.model);
+        setStatus(ids.length + ' model tersedia. Pilih lalu Simpan.', 'ok');
+      });
+    }
+
     dlg.body.appendChild(aiField('Format API', sel, 'OpenAI-compatible: endpoint /chat/completions. Anthropic: /v1/messages.'));
-    dlg.body.appendChild(aiField('Base URL', base, 'Contoh OpenAI: https://api.openai.com/v1 · Anthropic: https://api.anthropic.com. Slash di akhir dan /chat/completions ikut tertempel otomatis dibuang.'));
+    dlg.body.appendChild(aiField('Base URL', base, 'Contoh: https://tokenharbor.ai/v1 atau https://api.openai.com/v1. Slash akhir dan /chat/completions otomatis dibuang.'));
     dlg.body.appendChild(aiField('API Key', keyRow, 'Disimpan hanya di browser ini (localStorage "makalah.aiconfig.v1"), terpisah dari draf. Tidak ikut ke PDF.'));
-    dlg.body.appendChild(aiField('Model', modelWrap, 'Contoh TokenHarbor gratis: deepseek-v4.1-flash:free · qwen3.8-flash:free. Base URL: https://tokenharbor.ai/v1'));
+    dlg.body.appendChild(aiField('Model', modelWrap, 'Otomatis terisi daftar dari provider setelah Base URL + API Key valid. Bisa dicari.'));
     dlg.body.appendChild(statusEl);
+
+    /* Auto-muat daftar model bila key+base sudah ada */
+    base.addEventListener('blur', tryAutoLoadModels);
+    key.addEventListener('blur', tryAutoLoadModels);
+    if (cfg.key && cfg.base) {
+      setTimeout(tryAutoLoadModels, 200);
+    }
 
     dlg.foot.appendChild(aiBtn('Hapus Config', 'btn-danger', function () {
       if (!confirm('Hapus konfigurasi AI (termasuk API key) dari browser ini?')) return;

@@ -677,21 +677,27 @@ function fitZoom() {
 /* ---------- cetak ---------- */
 function printDoc() {
   if (!App.doc) return;
-  buildPaper(); /* selalu rebuild agar tidak ada sheet sisa */
-  /* Buang sheet kosong tepat sebelum print. */
+  buildPaper();
   const host = $('#sheets');
   if (host) {
     Array.from(host.querySelectorAll('.sheet')).forEach(sh => {
       const body = sh.querySelector('.pg-body');
-      if (!body || !body.children.length) sh.remove();
+      const has = body && Array.from(body.children).some(n => {
+        if (n.tagName === 'IMG') return true;
+        return (n.textContent || '').trim().length > 0;
+      });
+      if (!has) sh.remove();
     });
   }
   const missing = Doc.missing(App.doc);
   document.title = 'Makalah - ' + ((App.doc.judul || '').trim() || App.doc.id);
-  window.print();
-  if (missing.length) {
-    setTimeout(() => toast(missing.length + ' bagian masih kosong, ditandai di dalam PDF dengan [ ... ]'), 600);
-  }
+  /* Delay 1 frame agar DOM update sebelum dialog print */
+  requestAnimationFrame(() => {
+    window.print();
+    if (missing.length) {
+      setTimeout(() => toast(missing.length + ' bagian masih kosong, ditandai di dalam PDF dengan [ ... ]'), 600);
+    }
+  });
 }
 
 function safeFilename(name) {

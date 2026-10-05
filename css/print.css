@@ -252,20 +252,27 @@
   }
   .sheets.building { position: static !important; left: auto !important; visibility: visible !important; }
 
-  /* Setiap sheet = 1 halaman. Jangan force break setelah sheet terakhir. */
+  /*
+   * KUNCI anti-halaman-kosong:
+   * pakai page-break-BEFORE pada sheet ke-2 dst, BUKAN page-break-after.
+   * page-break-after:always di sheet terakhir sering memicu halaman blank di Chrome/Android.
+   */
   .sheet {
     box-shadow: none !important;
     margin: 0 !important;
     width: 21cm !important;
     height: 29.7cm !important;
+    max-height: 29.7cm !important;
+    overflow: hidden !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
-    page-break-after: always !important;
-    break-after: page !important;
+    page-break-after: auto !important;
+    break-after: auto !important;
+    page-break-before: auto !important;
+    break-before: auto !important;
   }
-  .sheet:last-of-type,
-  .sheet:last-child {
-    page-break-after: avoid !important;
-    break-after: avoid !important;
+  .sheet + .sheet {
+    page-break-before: always !important;
+    break-before: page !important;
   }
 }
