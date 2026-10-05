@@ -86,21 +86,11 @@ const Pager = {
         if (sec.scheme === 'none') return;
 
         /*
-         * Halaman pembuka BAB harus selalu nomor bawah-tengah.
-         * Jangan hanya mengandalkan state chapterStart: cek DOM juga supaya
-         * tetap benar jika pagination memindahkan blok saat isi berubah.
+         * Semua nomor halaman ditaruh di footer bawah-tengah, rapat ke tepi
+         * bawah kertas. Tidak ada lagi variasi "atas-kanan" untuk halaman
+         * lanjutan: posisi konsisten di semua halaman.
          */
-        const startsChapter = sec.id === 'body' && (
-          i === 0 ||
-          s.chapterStart ||
-          !!s.body.querySelector('.bab-new')
-        );
-
-        const pos = sec.scheme === 'roman'
-          ? 'bottom'
-          : (startsChapter ? 'bottom' : 'top');
-
-        s.sheet.appendChild(el('span', 'pgnum ' + pos, labels[i]));
+        s.sheet.appendChild(el('span', 'pgnum bottom', labels[i]));
       });
       out.push({ id: sec.id, sheets: used.map(s => s.sheet), labels });
     }

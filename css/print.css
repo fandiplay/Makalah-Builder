@@ -211,13 +211,11 @@
   font-size: 12pt;
   color: #000;
 }
-.pgnum.top {
-  top: 1.5cm;
-  right: 3cm;
-}
+/* Footer: rapat ke tepi bawah kertas (0,8 cm dari dasar halaman).
+   Nilai lama 1.2cm membuat nomor tampak menggantung jauh dari pembatas. */
 .pgnum.bottom {
   top: auto !important;
-  bottom: 1.2cm !important;
+  bottom: 0.8cm !important;
   left: 0 !important;
   right: 0 !important;
   width: 100%;
