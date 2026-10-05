@@ -66,7 +66,7 @@ function newSma() {
     judul: '', subjudul: '',
     mapel: '', guru: '',
     logo: null,
-    siswa: '', kelas: '', absen: '',
+    siswa: '', siswaAnggota: [{ nama: '', absen: '' }], kelas: '', absen: '',
     sekolah: '', kota: '',
     tahunAjaran: defaultTahunAjaran(),
     kata: { basmalah: false, teks: PENGANTAR_SMA, tanggal: todayID(), penulis: '' },
