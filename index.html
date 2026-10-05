@@ -42,6 +42,15 @@
       </div>
     </section>
 
+    <section class="card dashboard-ai card-lg" aria-labelledby="dashboardAiTitle">
+      <div class="dashboard-ai-copy">
+        <span class="eyebrow">AI ASSIST</span>
+        <h2 id="dashboardAiTitle" class="card-title">Bantuan AI untuk menyusun makalah</h2>
+        <p>Atur koneksi AI sekali, lalu gunakan satu instruksi untuk menyusun seluruh isi makalah.</p>
+      </div>
+      <button type="button" id="aiSettingsDash" class="btn-ghost">Pengaturan AI</button>
+    </section>
+
     <section>
       <h2 class="section-head">
         <span>Draf Tersimpan</span>
@@ -65,11 +74,14 @@
         <p id="saveStatus" class="editor-status" role="status" aria-live="polite"></p>
       </div>
       <label for="tplPick" class="sr-only">Template</label>
-      <select id="tplPick" class="tpl-pick" title="Ganti template dokumen">
-        <option value="sma">Template SMA</option>
-        <option value="kampus">Template Kuliah</option>
-      </select>
-      <button type="button" id="btnPrint" class="btn-primary editor-print">Unduh PDF</button>
+      <div class="editor-actions">
+        <select id="tplPick" class="tpl-pick" title="Ganti template dokumen">
+          <option value="sma">Template SMA</option>
+          <option value="kampus">Template Kuliah</option>
+        </select>
+        <button type="button" id="btnPrint" class="btn-primary editor-print">Unduh PDF</button>
+        <div id="aiEditorActions" class="ai-editor-actions"></div>
+      </div>
     </div>
   </header>
 
