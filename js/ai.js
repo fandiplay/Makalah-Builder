@@ -13,7 +13,8 @@
   'use strict';
 
   var AI_KEY = 'makalah.aiconfig.v1';
-  var AI_TIMEOUT = 60000; /* 60 detik */
+  var AI_TIMEOUT = 120000; /* 120 detik untuk generasi makalah */
+  var aiAbortCtrl = null; /* batalkan fetch saat user menghentikan */
 
   var AI_DEFAULTS = {
     openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
@@ -69,33 +70,54 @@
   /* Daftar kandidat URL chat untuk fallback saat 404. */
   function aiChatUrlCandidates(fmt, base) {
     var b = aiNormBase(base);
+    var list;
     if (fmt === 'anthropic') {
-      return [
+      list = [
         b + (/\/v1$/i.test(b) ? '/messages' : '/v1/messages'),
-        b + '/messages',
-        b + '/v1/messages'
-      ].filter(function (v, i, a) { return a.indexOf(v) === i; });
+        b.replace(/\/v1$/i, '') + '/v1/messages',
+        b + '/messages'
+      ];
+    } else {
+      /* TokenHarbor & OpenAI: Base = .../v1 → .../v1/chat/completions */
+      list = [
+        b + '/chat/completions',
+        /\/v1$/i.test(b) ? null : (b + '/v1/chat/completions'),
+        b.replace(/\/v1$/i, '') + '/v1/chat/completions'
+      ];
     }
-    return [
-      b + '/chat/completions',
-      b + '/v1/chat/completions',
-      b.replace(/\/v1$/i, '') + '/v1/chat/completions',
-      b + '/openai/v1/chat/completions'
-    ].filter(function (v, i, a) { return a.indexOf(v) === i; });
+    return list.filter(function (v, i, a) { return v && a.indexOf(v) === i; });
   }
 
   /* ---------- pemanggilan API ---------- */
   function aiFetch(url, opts) {
-    var ac = new AbortController();
+    /* Pakai abort bersama agar proses AI bisa dihentikan dari luar. */
+    if (!aiAbortCtrl) aiAbortCtrl = new AbortController();
+    var ac = aiAbortCtrl;
     var timedOut = false;
-    var timer = setTimeout(function () { timedOut = true; ac.abort(); }, AI_TIMEOUT);
+    var aborted = false;
+    var timer = setTimeout(function () { timedOut = true; try { ac.abort(); } catch (e) {} }, AI_TIMEOUT);
     var done = function (v) { clearTimeout(timer); return v; };
-    return fetch(url, Object.assign({ signal: ac.signal }, opts)).then(
+    return fetch(url, Object.assign({}, opts, { signal: ac.signal })).then(
       function (r) {
         return r.text().then(function (txt) { return done({ status: r.status, text: txt }); });
       },
-      function () { return done({ status: 0, text: '', net: true, timedOut: timedOut }); }
+      function (err) {
+        aborted = !!(err && err.name === 'AbortError');
+        return done({ status: 0, text: '', net: true, timedOut: timedOut, aborted: aborted });
+      }
     );
+  }
+
+  function aiStartRun() {
+    try { if (aiAbortCtrl) aiAbortCtrl.abort(); } catch (e) {}
+    aiAbortCtrl = new AbortController();
+  }
+
+  function aiStopRun() {
+    try { if (aiAbortCtrl) aiAbortCtrl.abort(); } catch (e) {}
+    aiAbortCtrl = null;
+    if (run) run.busy = false;
+    if (typeof project !== 'undefined') project.busy = false;
   }
 
   /* Status HTTP dipetakan ke pesan Bahasa Indonesia yang ramah. */
@@ -110,10 +132,23 @@
   }
 
   function aiErrMsg(r) {
-    if (r.net && r.timedOut) return 'Server AI tidak menjawab dalam 60 detik. Coba lagi atau ganti model.';
+    if (r && r.aborted && !r.timedOut) return 'Proses AI dihentikan.';
+    if (r.net && r.timedOut) return 'Server AI tidak menjawab dalam 120 detik. Coba lagi atau ganti model.';
     if (r.net) return 'Gagal menghubungi server AI. Periksa internet, Base URL, dan izin CORS server.';
     if (r.status < 200 || r.status >= 300) return aiHttpMsg(r.status);
     return 'Balasan AI tidak bisa dibaca. Coba Ulangi.';
+  }
+
+  function aiParseServerErr(txt) {
+    try {
+      var j = JSON.parse(txt);
+      if (j && j.error) {
+        if (typeof j.error === 'string') return j.error;
+        if (j.error.message) return j.error.message;
+      }
+      if (j && j.message) return j.message;
+    } catch (e) {}
+    return '';
   }
 
   function aiBody(cfg, messages, maxTokens) {
@@ -159,52 +194,62 @@
 
   /* balasan -> teks, atau objek { error: pesanFriendly }. */
   function aiChat(cfg, system, user, maxTokens) {
+    /* Jangan reset abort di sini jika sudah di-start oleh pemanggil (project). */
+    if (!aiAbortCtrl) aiStartRun();
     var body = aiBody(cfg, [{ role: 'system', content: system }, { role: 'user', content: user }], maxTokens);
     var urls = aiChatUrlCandidates(cfg.fmt, cfg.base);
     function attempt(i) {
-      if (i >= urls.length) return { error: 'Endpoint AI tidak ditemukan (404). Periksa Base URL di Pengaturan AI.' };
+      if (i >= urls.length) return Promise.resolve({ error: 'Endpoint AI tidak ditemukan (404). Periksa Base URL di Pengaturan AI.' });
       var url = urls[i];
       return aiFetch(url, { method: 'POST', headers: aiHeaders(cfg), body: body }).then(function (r) {
-        if (r.net) return { error: aiErrMsg(r) };
+        if (r.aborted) return { error: aiErrMsg(r) };
+        if (r.net) {
+          if (i < urls.length - 1) return attempt(i + 1);
+          return { error: aiErrMsg(r) };
+        }
         if (r.status === 404 || r.status === 405) return attempt(i + 1);
-        if (r.status < 200 || r.status >= 300) return { error: aiHttpMsg(r.status) };
+        if (r.status < 200 || r.status >= 300) {
+          var extra = aiParseServerErr(r.text);
+          return { error: aiHttpMsg(r.status) + (extra ? ' — ' + extra : '') };
+        }
         var data = null;
         try { data = JSON.parse(r.text); } catch (e) { data = null; }
-        var text = aiPickText(cfg, data);
-        if (typeof text !== 'string' || !text.trim()) return { error: 'Balasan AI kosong. Coba Ulangi.' };
-        return { text: text };
+        var out = aiPickText(cfg, data);
+        if (typeof out !== 'string' || !out.trim()) return { error: 'Balasan AI kosong. Coba Ulangi.' };
+        return { text: out };
       });
     }
     return attempt(0);
   }
 
   function aiTest(cfg) {
+    aiStartRun();
     var messages = [{ role: 'system', content: 'Balas satu kata.' }, { role: 'user', content: 'Balas: OK' }];
-    var body = aiBody(cfg, messages, 8);
+    var body = aiBody(cfg, messages, 16);
     var urls = aiChatUrlCandidates(cfg.fmt, cfg.base);
     var tried = [];
     function attempt(i) {
       if (i >= urls.length) {
-        return { error: 'Semua endpoint gagal (404/error). Dicoba: ' + tried.join(' · ') + '. Periksa Base URL & format API.' };
+        return Promise.resolve({ error: 'Semua endpoint gagal. Dicoba:\n' + tried.join('\n') + '\n\nPastikan Base URL = https://tokenharbor.ai/v1 (tanpa /chat/completions) dan model valid (contoh: deepseek-v4.1-flash:free).' });
       }
       var url = urls[i];
       tried.push(url);
       return aiFetch(url, { method: 'POST', headers: aiHeaders(cfg), body: body }).then(function (r) {
+        if (r.aborted) return { error: aiErrMsg(r) };
         if (r.net) {
-          if (i === urls.length - 1) return { error: aiErrMsg(r) };
-          return attempt(i + 1);
+          /* Jaringan/CORS: coba kandidat berikutnya sekali, lalu laporkan. */
+          if (i < urls.length - 1) return attempt(i + 1);
+          return { error: aiErrMsg(r) };
         }
+        /* Hanya 404/405 yang dianggap "endpoint salah" → coba URL lain. */
         if (r.status === 404 || r.status === 405) return attempt(i + 1);
         if (r.status < 200 || r.status >= 300) {
-          var extra = '';
-          try {
-            var j = JSON.parse(r.text);
-            if (j && (j.error && (j.error.message || j.error))) extra = ' — ' + (j.error.message || j.error);
-            else if (j && j.message) extra = ' — ' + j.message;
-          } catch (e) { /* ignore */ }
-          return { error: aiHttpMsg(r.status) + extra + ' (URL: ' + url + ')' };
+          var extra = aiParseServerErr(r.text);
+          var msg = aiHttpMsg(r.status) + (extra ? ' — ' + extra : '') + '\nURL: ' + url;
+          if (r.status === 401) msg += '\nTips: salin ulang API key dari dashboard (thk_live_…).';
+          if (r.status === 403) msg += '\nTips: model mungkin berbayar — coba model :free.';
+          return { error: msg };
         }
-        /* Simpan base yang cocok agar pemanggilan berikutnya langsung benar. */
         var workedBase = url.replace(/\/chat\/completions$/i, '').replace(/\/messages$/i, '');
         return { ok: true, model: cfg.model, status: r.status, url: url, base: workedBase };
       });
@@ -447,8 +492,29 @@
     ov.appendChild(sheet);
     document.body.appendChild(ov);
 
-    ov.addEventListener('click', function (e) { if (e.target === ov) aiClose(); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !ov.classList.contains('is-hidden')) aiClose(); });
+    ov.addEventListener('click', function (e) {
+      if (e.target !== ov) return;
+      /* Saat AI sedang menulis: konfirmasi dulu, lalu hentikan. */
+      if ((run && run.busy) || (typeof project !== 'undefined' && project.busy)) {
+        var stop = window.confirm('AI sedang menulis. Hentikan proses AI sekarang?');
+        if (!stop) return;
+        if (typeof project !== 'undefined') { project.busy = false; project.seq++; }
+        aiStopRun();
+        toast('Proses AI dihentikan.');
+      }
+      aiClose();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || !dlg || dlg.ov.classList.contains('is-hidden')) return;
+      if ((run && run.busy) || (typeof project !== 'undefined' && project.busy)) {
+        var stop = window.confirm('AI sedang menulis. Hentikan proses AI sekarang?');
+        if (!stop) return;
+        if (typeof project !== 'undefined') { project.busy = false; project.seq++; }
+        aiStopRun();
+        toast('Proses AI dihentikan.');
+      }
+      aiClose();
+    });
 
     dlg = { ov: ov, title: title, body: body, foot: foot, onClose: null };
     return dlg;
@@ -467,6 +533,10 @@
 
   function aiClose() {
     if (!dlg) return;
+    if ((run && run.busy) || (typeof project !== 'undefined' && project.busy)) {
+      if (typeof project !== 'undefined') { project.busy = false; project.seq++; }
+      aiStopRun();
+    }
     dlg.ov.classList.add('is-hidden');
     dlg.ov.setAttribute('aria-hidden', 'true');
     document.body.style.overflow = '';
@@ -620,7 +690,7 @@
     dlg.body.appendChild(aiField('Format API', sel, 'OpenAI-compatible: endpoint /chat/completions. Anthropic: /v1/messages.'));
     dlg.body.appendChild(aiField('Base URL', base, 'Contoh OpenAI: https://api.openai.com/v1 · Anthropic: https://api.anthropic.com. Slash di akhir dan /chat/completions ikut tertempel otomatis dibuang.'));
     dlg.body.appendChild(aiField('API Key', keyRow, 'Disimpan hanya di browser ini (localStorage "makalah.aiconfig.v1"), terpisah dari draf. Tidak ikut ke PDF.'));
-    dlg.body.appendChild(aiField('Model', modelWrap, 'Setelah Tes Koneksi berhasil, daftar model provider muncul di sini.'));
+    dlg.body.appendChild(aiField('Model', modelWrap, 'Contoh TokenHarbor gratis: deepseek-v4.1-flash:free · qwen3.8-flash:free. Base URL: https://tokenharbor.ai/v1'));
     dlg.body.appendChild(statusEl);
 
     dlg.foot.appendChild(aiBtn('Hapus Config', 'btn-danger', function () {
@@ -699,7 +769,20 @@
     p.className = 'ai-status';
     p.textContent = msg;
     dlg.body.appendChild(p);
+    var hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.style.marginTop = '8px';
+    hint.textContent = 'Klik di luar kotak atau tombol Hentikan untuk membatalkan.';
+    dlg.body.appendChild(hint);
     dlg.foot.textContent = '';
+    dlg.foot.appendChild(aiBtn('Hentikan', 'btn-danger', function () {
+      var stop = window.confirm('Hentikan proses AI sekarang?');
+      if (!stop) return;
+      if (typeof project !== 'undefined') { project.busy = false; project.seq++; }
+      aiStopRun();
+      toast('Proses AI dihentikan.');
+      aiClose();
+    }));
   }
 
   function aiErrorView(msg, onAgain) {
@@ -968,6 +1051,7 @@
     project.prompt = prompt;
     project.values = {};
     project.busy = true;
+    aiStartRun();
     aiOpen('Menyusun makalah dengan AI');
     aiBusyView('AI sedang menyiapkan makalah…');
 
@@ -992,6 +1076,11 @@
         if (seq !== project.seq) return;
         if (r.error) {
           project.busy = false;
+          run.busy = false;
+          if (/dihentikan/i.test(r.error)) {
+            aiClose();
+            return;
+          }
           aiErrorView(r.error, function () { aiProjectGenerate(project.prompt); });
           return;
         }
