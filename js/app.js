@@ -19,9 +19,8 @@ const FORM_BY_TPL = {
         { p: 'judul', t: 'text', label: 'Judul Makalah', ph: 'contoh: Pengaruh Media Sosial terhadap Prestasi Belajar', hint: 'Di cover otomatis jadi kapital, TNR 16pt bold, di atas logo.' },
         { p: 'subjudul', t: 'text', label: 'Subjudul (opsional)' },
         { p: 'logo', t: 'logo', label: 'Logo Sekolah', hint: 'PNG/JPG, otomatis dikecilkan. Kosong = pakai penanda [LOGO SEKOLAH].' },
-        { p: 'siswa', t: 'text', label: 'Nama Siswa', ph: 'contoh: Ahmad Rizki', req: true },
+        { p: 'siswaAnggota', t: 'membersSma', label: 'Siswa', add: 'Tambah Siswa', req: true, hint: 'Tambah siswa bila makalah dikerjakan bersama. No. absen boleh diisi per siswa.' },
         { p: 'kelas', t: 'text', label: 'Kelas', ph: 'contoh: XI IPA 1', req: true },
-        { p: 'absen', t: 'text', label: 'No. Absen' },
         { p: 'mapel', t: 'text', label: 'Mata Pelajaran', ph: 'contoh: Biologi', req: true },
         { p: 'guru', t: 'text', label: 'Guru Pembimbing', ph: 'contoh: Dra. Siti Aminah, M.Pd.', hint: 'Tulis lengkap dengan gelar.', req: true },
         { p: 'sekolah', t: 'text', label: 'Nama Sekolah', ph: 'contoh: SMA Negeri 1 Banjarmasin', req: true },
@@ -70,8 +69,8 @@ const FORM_BY_TPL = {
         { p: 'subjudul', t: 'text', label: 'Subjudul (opsional)' },
         { p: 'matkul', t: 'text', label: 'Mata Kuliah', req: true },
         { p: 'dosen', t: 'text', label: 'Dosen Pengampu', ph: 'contoh: Dr. H. Ahmad Fauzi, M.Pd.', hint: 'Tulis lengkap dengan gelar, mengikuti berkas resmi.', req: true },
-        { p: 'logo', t: 'logo', label: 'Logo Kampus', hint: 'PNG/JPG, otomatis dikecilkan. Kosong = pakai penanda [LOGO KAMPUS].' },
-        { p: 'anggota', t: 'members', label: 'Anggota Tim', add: 'Tambah Anggota', req: true },
+        { p: 'logo', t: 'logo', label: 'Logo Kampus', hint: 'PNG/JPG, otomatis dikecilkan. Logo dicetak di tengah sebelum daftar anggota.' },
+        { p: 'anggota', t: 'members', label: 'Anggota Tim', add: 'Tambah Anggota', req: true, hint: 'Tulis NIM langsung di dalam nama, misalnya: Ahmad Rizki (123456789).' },
         { p: 'prodi', t: 'text', label: 'Program Studi', req: true },
         { p: 'fakultas', t: 'text', label: 'Fakultas' },
         { p: 'institusi', t: 'text', label: 'Institusi / Universitas' },
@@ -149,7 +148,7 @@ function fmtTime(ts) {
    form tidak pernah render undefined. */
 const kk = path => path.split('.')[0];
 const BLANK = {
-  'anggota': { nama: '', nim: '' }, 'bab1.rumusan': [''], 'bab1.tujuan': [''],
+  'anggota': { nama: '', nim: '' }, 'siswaAnggota': { nama: '', absen: '' }, 'bab1.rumusan': [''], 'bab1.tujuan': [''],
   'bab2.subbab': { judul: '', isi: '' }, 'pustaka': { penulis: '', tahun: '', judul: '', penerbit: '', url: '' }
 };
 function hydrate(raw) {
@@ -158,10 +157,34 @@ function hydrate(raw) {
   ['kata', 'bab1', 'bab2', 'bab3'].forEach(k => { d[k] = Object.assign(base[k], (raw && raw[k]) || {}); });
   d.id = (raw && raw.id) || base.id;
   d.logo = (raw && raw.logo) || null;
+
+  /* Migrasi draf SMA lama: satu field siswa + absen menjadi daftar siswa. */
+  if (d.template === 'sma') {
+    if (!Array.isArray(d.siswaAnggota) || !d.siswaAnggota.length) {
+      d.siswaAnggota = [{
+        nama: typeof d.siswa === 'string' ? d.siswa : '',
+        absen: typeof d.absen === 'string' ? d.absen : ''
+      }];
+    } else {
+      d.siswaAnggota = d.siswaAnggota.map(x => ({
+        nama: String((x && x.nama) || ''),
+        absen: String((x && x.absen) || '')
+      }));
+    }
+  }
+
+  /* Draf kuliah lama tetap dibaca, tetapi NIM lama tidak lagi ditampilkan/ditulis di cover. */
+  if (Array.isArray(d.anggota)) {
+    d.anggota = d.anggota.map(x => ({ nama: String((x && x.nama) || '') }));
+  }
+
   for (const path in BLANK) {
     const v = get(d, path);
-    if (Array.isArray(BLANK[path])) { if (!Array.isArray(v) || !v.length) d[kk(path)] = ['']; }
-    else if (!Array.isArray(v) || !v.length) d[kk(path)] = [Object.assign({}, BLANK[path])];
+    if (Array.isArray(BLANK[path])) {
+      if (!Array.isArray(v) || !v.length) set(d, path, ['']);
+    } else if (!Array.isArray(v) || !v.length) {
+      set(d, path, [Object.assign({}, BLANK[path])]);
+    }
   }
   return d;
 }
@@ -367,7 +390,8 @@ function renderList(host, f) {
       inp.value = item || '';
       row.appendChild(inp);
     } else {
-      (f.t === 'members' ? [['nama', 'Nama lengkap'], ['nim', 'NIM']]
+      (f.t === 'members' ? [['nama', 'Nama lengkap']]
+        : f.t === 'membersSma' ? [['nama', 'Nama lengkap'], ['absen', 'No. absen (opsional)']]
         : f.t === 'subbab' ? [['judul', 'Judul subbab'], ['isi', 'Isi uraian (baris kosong = paragraf baru)']]
         : REFS).forEach(([k, ph]) => {
         const box = document.createElement(k === 'isi' ? 'textarea' : 'input');
@@ -469,7 +493,13 @@ function onFormAction(e) {
   if (!f) return;
   const arr = get(App.doc, path) || [];
   const i = Number(b.dataset.i);
-  const blank = { anggota: { nama: '', nim: '' }, items: '', subbab: { judul: '', isi: '' }, refs: { penulis: '', tahun: '', judul: '', penerbit: '', url: '' } }[f.t];
+  const blank = {
+    anggota: { nama: '' },
+    membersSma: { nama: '', absen: '' },
+    items: '',
+    subbab: { judul: '', isi: '' },
+    refs: { penulis: '', tahun: '', judul: '', penerbit: '', url: '' }
+  }[f.t];
 
   if (act === 'add') arr.push(typeof blank === 'string' ? '' : Object.assign({}, blank));
   else if (act === 'del') {
@@ -486,7 +516,7 @@ function onFormAction(e) {
   updateChecklist();
   touch();
   const ctrls = $$('#list-' + path.replace(/\./g, '-') + ' input, #list-' + path.replace(/\./g, '-') + ' textarea');
-  if (ctrls.length) ctrls[Math.max(0, ctrls.length - ({ subbab: 1, refs: 5, members: 2 }[f.t] || 1))].focus();
+  if (ctrls.length) ctrls[Math.max(0, ctrls.length - ({ subbab: 1, refs: 5, members: 1, membersSma: 2 }[f.t] || 1))].focus();
 }
 
 /* ---------- checklist ---------- */
@@ -569,7 +599,7 @@ function buildPaper() {
       id: 'body', scheme: 'arabic', base: 1,
       blocks: () => { const r = Doc.bodyBlocks(doc); heads = r.heads; return r.blocks; }
     },
-    { id: 'cover', scheme: 'none', blocks: () => Doc.coverBlocks(doc) },
+    { id: 'cover', scheme: 'none', templateClass: doc.template, blocks: () => Doc.coverBlocks(doc) },
     { id: 'kata', scheme: 'roman', base: 2, blocks: () => Doc.kataBlocks(doc) },
     {
       id: 'toc', scheme: 'roman',
