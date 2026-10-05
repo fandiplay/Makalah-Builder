@@ -1,7 +1,6 @@
 /* pager.js: mesin pagination client-side.
    Mengukur tinggi tiap blok terhadap tinggi area isi (23,7 cm), lalu memecah
-   paragraf yang terlalu panjang pada batas kata. Semua satuan absolut (cm),
-   jadi tinggi hasil ukur = tinggi saat dicetak pada skala 100%. */
+   paragraf yang terlalu panjang pada batas kata. */
 
 const PAGE = { w: 21, h: 29.7, top: 3, right: 3, bottom: 3, left: 4 };
 const BODY_CM = PAGE.h - PAGE.top - PAGE.bottom; /* 23,7 cm */
@@ -27,10 +26,6 @@ function romanize(n) {
 }
 
 const Pager = {
-  /* sections: [{ id, blocks, scheme: 'none'|'roman'|'arabic', base }]
-     base = nomor halaman awal bagian tersebut (cover tidak bernomor).
-     blocks: [{ node, keep }], keep = menempel ke blok berikutnya.
-     Balikan: [{ id, sheets: [sheetEl], labels: [...] }] */
   build(host, sections) {
     const px = BODY_PX();
     host.innerHTML = '';
@@ -52,43 +47,47 @@ const Pager = {
       };
       ctx.cur = ctx.mk();
 
-      for (const unit of groupUnits(blocks)) {
+      for (const unit of groupUnits(blocks || [])) {
         if (unit.brk && ctx.cur.body.children.length) ctx.cur = ctx.mk();
         if (unit.brk) ctx.cur.chapterStart = true;
         let placed = false;
         while (!placed) {
-          if (fits(ctx.cur.body, unit.nodes, px)) { placed = true; continue; }
+          if (fits(ctx.cur.body, unit.nodes, px)) {
+            placed = true;
+            continue;
+          }
           if (ctx.cur.body.children.length === 0) {
+            /* Halaman kosong: taruh sebanyak mungkin, pecah paragraf bila perlu.
+               PENTING: JANGAN buka halaman baru di sini — itu sumber blank page. */
             let k = 0;
             while (k < unit.nodes.length && fitsOne(ctx.cur.body, unit.nodes[k], px)) k++;
             const rest = unit.nodes.slice(k);
             if (rest.length && canSplit(rest[0])) {
               splitUnit(rest[0], ctx);
-              rest.slice(1).forEach(n => ctx.cur.body.appendChild(n));
+              rest.slice(1).forEach(n => {
+                if (!fitsOne(ctx.cur.body, n, px) && ctx.cur.body.children.length) ctx.cur = ctx.mk();
+                ctx.cur.body.appendChild(n);
+              });
             } else {
               unit.nodes.forEach(n => ctx.cur.body.appendChild(n));
             }
-            /* Jangan buka halaman baru otomatis di sini — halaman berikutnya
-               dibuat hanya jika masih ada unit sisa. */
             placed = true;
             continue;
           }
+          /* Halaman sudah ada isinya tapi unit tidak muat → halaman baru. */
           ctx.cur = ctx.mk();
         }
       }
 
-      /* Hapus SEMUA sheet kosong (bukan hanya yang di ekor). Cacat lama:
-         filter + slice(used.length) menyisakan sheet kosong di awal/tengah
-         sehingga PDF punya halaman blank ekstra. */
+      /* Buang SEMUA sheet kosong (awal/tengah/akhir). */
       const used = [];
       ctx.sheets.forEach(s => {
-        if (s.body.children.length > 0) used.push(s);
-        else if (s.sheet.parentNode) s.sheet.remove();
+        if (s.body && s.body.children && s.body.children.length > 0) used.push(s);
+        else if (s.sheet && s.sheet.parentNode) s.sheet.remove();
       });
       ctx.sheets = used;
 
-      /* Cover: pastikan tepat 1 halaman. Konten cover memakai flex
-         (margin-top:auto) jadi tidak boleh dipecah multi-halaman. */
+      /* Cover selalu 1 halaman. */
       if (sec.id === 'cover' && used.length > 1) {
         const first = used[0];
         used.slice(1).forEach(s => {
@@ -105,6 +104,12 @@ const Pager = {
       });
       out.push({ id: sec.id, sheets: ctx.sheets.map(s => s.sheet), labels });
     }
+
+    /* Sapu bersih: hapus sisa sheet kosong di host (jaga-jaga). */
+    Array.from(host.querySelectorAll('.sheet')).forEach(sh => {
+      const body = sh.querySelector('.pg-body');
+      if (!body || !body.children.length) sh.remove();
+    });
 
     host.classList.remove('building');
     return out;
@@ -151,7 +156,7 @@ function measure(body, node, px) {
 }
 
 function canSplit(node) {
-  return !node.children.length && node.textContent.trim().split(/\s+/).length > 3;
+  return node && !node.children.length && node.textContent.trim().split(/\s+/).length > 3;
 }
 
 function splitUnit(node, ctx) {

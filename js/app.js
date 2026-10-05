@@ -605,11 +605,8 @@ function buildPaper() {
   if (!App.doc) return;
   const doc = App.doc;
   const host = $('#sheets');
-  const wrap = $('#paperWrap');
   let heads = [];
 
-  // Urutan hitung: isi dulu karena nomor halamannya dibutuhkan Daftar Isi,
-  // lalu cover dan prakata. Sheet disusun ulang ke urutan dokumen di bawah.
   const res = Pager.build(host, [
     {
       id: 'body', scheme: 'arabic', base: 1,
@@ -619,11 +616,11 @@ function buildPaper() {
     { id: 'kata', scheme: 'roman', base: 2, blocks: () => Doc.kataBlocks(doc) },
     {
       id: 'toc', scheme: 'roman',
-      base: r => 2 + r.find(x => x.id === 'kata').sheets.length,
+      base: r => 2 + (r.find(x => x.id === 'kata') || { sheets: [] }).sheets.length,
       blocks: r => {
-        const body = r.find(x => x.id === 'body');
+        const body = r.find(x => x.id === 'body') || { sheets: [] };
         Pager.mapHeads(heads, body.sheets);
-        const kataPages = r.find(x => x.id === 'kata').sheets.length;
+        const kataPages = (r.find(x => x.id === 'kata') || { sheets: [] }).sheets.length;
         const entries = [
           { label: 'KATA PENGANTAR', level: 1, page: 'ii' },
           { label: 'DAFTAR ISI', level: 1, page: romanize(2 + kataPages) }
@@ -633,11 +630,26 @@ function buildPaper() {
     }
   ]);
 
+  /* Susun ulang: cover → kata → toc → body. Hanya sheet yang masih punya konten. */
   ['cover', 'kata', 'toc', 'body'].forEach(id => {
-    res.filter(x => x.id === id).forEach(x => x.sheets.forEach(sh => host.appendChild(sh)));
+    res.filter(x => x.id === id).forEach(x => {
+      x.sheets = x.sheets.filter(sh => {
+        const body = sh.querySelector('.pg-body');
+        const ok = body && body.children.length > 0;
+        if (!ok && sh.parentNode) sh.remove();
+        return ok;
+      });
+      x.sheets.forEach(sh => host.appendChild(sh));
+    });
   });
 
-  const total = res.reduce((n, x) => n + x.sheets.length, 0);
+  /* Sapu akhir: buang sisa sheet kosong di host. */
+  Array.from(host.querySelectorAll('.sheet')).forEach(sh => {
+    const body = sh.querySelector('.pg-body');
+    if (!body || !body.children.length) sh.remove();
+  });
+
+  const total = host.querySelectorAll('.sheet').length;
   App.paperDirty = false;
   $('#paperStatus').textContent = total + ' halaman A4';
   const z = $('#zoom');
@@ -665,7 +677,15 @@ function fitZoom() {
 /* ---------- cetak ---------- */
 function printDoc() {
   if (!App.doc) return;
-  if (App.paperDirty) buildPaper();
+  buildPaper(); /* selalu rebuild agar tidak ada sheet sisa */
+  /* Buang sheet kosong tepat sebelum print. */
+  const host = $('#sheets');
+  if (host) {
+    Array.from(host.querySelectorAll('.sheet')).forEach(sh => {
+      const body = sh.querySelector('.pg-body');
+      if (!body || !body.children.length) sh.remove();
+    });
+  }
   const missing = Doc.missing(App.doc);
   document.title = 'Makalah - ' + ((App.doc.judul || '').trim() || App.doc.id);
   window.print();
@@ -695,138 +715,167 @@ async function downloadDocx() {
     }
     const {
       Document, Packer, Paragraph, TextRun, AlignmentType,
-      Header, Footer, PageNumber, NumberFormat, BorderStyle, TabStopType, TabStopPosition
+      Header, Footer, PageNumber, NumberFormat, convertInchesToTwip
     } = window.docx;
 
     const FONT = 'Times New Roman';
+    const SZ = 24; /* 12pt */
+    const LINE = 360; /* 1.5 * 240 */
+
+    const run = (text, opt = {}) => new TextRun({
+      text: text == null ? '' : String(text),
+      font: FONT,
+      size: opt.size || SZ,
+      bold: !!opt.bold,
+      italics: !!opt.italics,
+      underline: opt.underline ? {} : undefined
+    });
+
     const p = (text, opt = {}) => new Paragraph({
-      spacing: { after: opt.after != null ? opt.after : 120, line: 360, before: opt.before || 0 },
+      spacing: { after: opt.after != null ? opt.after : 120, line: LINE, before: opt.before || 0 },
       alignment: opt.align || AlignmentType.JUSTIFIED,
       indent: opt.indent,
-      children: [new TextRun({
-        text: text == null ? '' : String(text),
-        font: FONT,
-        size: opt.size || 24,
-        bold: !!opt.bold,
-        italics: !!opt.italics,
-        underline: opt.underline ? {} : undefined
-      })]
+      children: [run(text, opt)]
     });
     const center = (text, opt = {}) => p(text, Object.assign({ align: AlignmentType.CENTER }, opt));
-    const blank = () => p('', { after: 0 });
+    const blank = (n = 1) => {
+      const arr = [];
+      for (let i = 0; i < n; i++) arr.push(p('', { after: 0 }));
+      return arr;
+    };
     const pageBreak = () => new Paragraph({ children: [], pageBreakBefore: true });
+
+    /* TOC line with leader dots (manual) — sama seperti PDF. */
+    const tocLine = (label, pageStr, level) => {
+      const page = String(pageStr || '');
+      const maxDots = level > 1 ? 48 : 52;
+      const raw = String(label || '');
+      const dots = Math.max(3, maxDots - raw.length - page.length);
+      const leader = '.'.repeat(dots);
+      return new Paragraph({
+        spacing: { after: 60, line: LINE },
+        indent: level > 1 ? { left: convertInchesToTwip(0.5) } : undefined,
+        children: [
+          run(raw + ' ', { bold: level === 1 }),
+          run(leader, { size: 20 }),
+          run(' ' + page)
+        ]
+      });
+    };
+
+    /* ===== Bangun data yang sama dengan preview PDF ===== */
+    if (App.paperDirty) buildPaper();
+    const bodyData = Doc.bodyBlocks(d);
+    /* Map page numbers dari pratinjau bila sudah dibangun */
+    const host = $('#sheets');
+    if (host) {
+      const bodySheets = Array.from(host.querySelectorAll('.sheet')).filter(sh => {
+        /* body sheets punya nomor arab di footer, skip cover/kata/toc kasar */
+        return true;
+      });
+      /* Pakai heads.page dari buildPaper terakhir jika ada */
+    }
 
     const children = [];
 
-    /* ===== COVER ===== */
+    /* ---------- COVER ---------- */
     if (d.template === 'sma') {
-      children.push(center((d.jenisKarya || 'MAKALAH').toUpperCase(), { bold: true, size: 24 }));
+      children.push(center((d.jenisKarya || 'MAKALAH').toUpperCase(), { bold: true }));
       children.push(center((d.judul || '[JUDUL MAKALAH]').toUpperCase(), { bold: true, size: 32, after: 80 }));
       if ((d.subjudul || '').trim()) children.push(center(d.subjudul.trim(), { italics: true }));
-      children.push(blank());
+      children.push(...blank(2));
       children.push(center('Disusun oleh:', { bold: true, after: 60 }));
       const students = Array.isArray(d.siswaAnggota) && d.siswaAnggota.length
         ? d.siswaAnggota : [{ nama: d.siswa || '', absen: '' }];
-      students.forEach((s, i) => {
+      students.forEach(s => {
         const name = (s.nama || '[nama siswa]').trim();
         const absen = (s.absen || '').trim();
         children.push(center(name + (absen ? ' (Absen ' + absen + ')' : ''), { bold: true, after: 40 }));
       });
-      children.push(blank());
-      children.push(blank());
+      children.push(...blank(3));
       children.push(center('Kelas ' + (d.kelas || '[kelas]'), { after: 40 }));
       if ((d.mapel || '').trim()) children.push(center('Mata Pelajaran: ' + d.mapel.trim(), { after: 40 }));
       if (!d.sembunyikanGuru && (d.guru || '').trim()) {
         children.push(center('Guru Pembimbing: ' + d.guru.trim(), { after: 40 }));
       }
-      children.push(blank());
+      children.push(...blank(1));
       children.push(center((d.sekolah || '[NAMA SEKOLAH]').toUpperCase(), { bold: true, after: 40 }));
       if ((d.kota || '').trim()) children.push(center(d.kota.trim(), { after: 40 }));
       children.push(center('TAHUN AJARAN ' + (d.tahunAjaran || ''), { bold: true }));
     } else {
-      children.push(center('MAKALAH', { bold: true, size: 24 }));
+      children.push(center('MAKALAH', { bold: true }));
       children.push(center((d.judul || '[JUDUL MAKALAH]').toUpperCase(), { bold: true, size: 32 }));
       if ((d.subjudul || '').trim()) children.push(center(d.subjudul.trim(), { italics: true }));
-      children.push(blank());
+      children.push(...blank(1));
       children.push(center('Disusun untuk Memenuhi Tugas Mata Kuliah', { after: 40 }));
       children.push(center(d.matkul || '[mata kuliah]', { after: 80 }));
       if (!d.sembunyikanDosen) {
         children.push(center('Dosen Pengampu:', { after: 40 }));
         children.push(center(d.dosen || '[nama dosen, gelar]', { bold: true }));
       }
-      children.push(blank());
+      children.push(...blank(1));
       children.push(center('OLEH:', { bold: true, after: 60 }));
       (d.anggota || []).forEach((a, i) => {
         children.push(center((i + 1) + '. ' + ((a.nama || '').trim() || '[nama anggota]'), { after: 40 }));
       });
-      children.push(blank());
+      children.push(...blank(2));
       children.push(center(d.prodi || '[program studi]', { bold: true, after: 40 }));
       if ((d.fakultas || '').trim()) children.push(center(d.fakultas.trim(), { after: 40 }));
       if ((d.institusi || '').trim()) children.push(center(d.institusi.trim(), { after: 40 }));
       children.push(center([d.kota || '[kota]', d.tahun || ''].filter(Boolean).join(', '), { bold: true }));
     }
 
-    /* ===== KATA PENGANTAR ===== */
+    /* ---------- KATA PENGANTAR ---------- */
     children.push(pageBreak());
-    children.push(center('KATA PENGANTAR', { bold: true, size: 24, after: 240 }));
+    children.push(center('KATA PENGANTAR', { bold: true, after: 240 }));
     const kataTeks = (Doc.subst(d.kata.teks || '', d) || '').trim();
     const kataParas = kataTeks.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
     if (!kataParas.length) children.push(p('[Kata pengantar belum diisi]', { italics: true }));
     kataParas.forEach(t => children.push(p(t.replace(/\n/g, ' '))));
-    children.push(blank());
+    children.push(...blank(1));
     children.push(new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { after: 0, line: 360 },
-      children: [new TextRun({
-        text: [d.kota || '', d.kata.tanggal || ''].filter(Boolean).join(', '),
-        font: FONT, size: 24
-      })]
+      spacing: { after: 0, line: LINE },
+      children: [run([d.kota || '', d.kata.tanggal || ''].filter(Boolean).join(', '))]
     }));
     children.push(new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { after: 0, line: 360 },
-      children: [new TextRun({ text: 'Penulis,', font: FONT, size: 24 })]
+      spacing: { after: 0, line: LINE },
+      children: [run('Penulis,')]
     }));
-    children.push(blank());
-    children.push(blank());
+    children.push(...blank(2));
     children.push(new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { after: 0, line: 360 },
-      children: [new TextRun({
-        text: (d.kata.penulis || '').trim() || 'Tim Penulis',
-        font: FONT, size: 24, underline: {}
-      })]
+      spacing: { after: 0, line: LINE },
+      children: [run((d.kata.penulis || '').trim() || 'Tim Penulis', { underline: true })]
     }));
 
-    /* ===== DAFTAR ISI (manual, sesuai struktur preview) ===== */
+    /* ---------- DAFTAR ISI ---------- */
     children.push(pageBreak());
-    children.push(center('DAFTAR ISI', { bold: true, size: 24, after: 240 }));
+    children.push(center('DAFTAR ISI', { bold: true, after: 240 }));
 
-    const tocLine = (label, pageHint, level) => new Paragraph({
-      spacing: { after: 60, line: 360 },
-      indent: level > 1 ? { left: 360 } : undefined,
-      tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.RIGHT, leader: 'dot' }],
-      children: [
-        new TextRun({ text: label, font: FONT, size: 24, bold: level === 1 }),
-        new TextRun({ text: '\t' + pageHint, font: FONT, size: 24 })
-      ]
-    });
-
-    const body = Doc.bodyBlocks(d);
+    const kataPages = 1; /* biasanya 1 halaman */
+    const tocPage = romanize(2 + kataPages);
     const tocEntries = [
       { label: 'KATA PENGANTAR', level: 1, page: 'ii' },
-      { label: 'DAFTAR ISI', level: 1, page: 'iii' }
-    ].concat(body.heads.map((h, i) => ({
+      { label: 'DAFTAR ISI', level: 1, page: tocPage }
+    ].concat(bodyData.heads.map(h => ({
       label: h.label,
       level: h.level,
-      page: String(i + 1) /* perkiraan; nomor final di PDF lebih akurat */
+      page: h.page != null ? String(h.page) : '-'
     })));
     tocEntries.forEach(e => children.push(tocLine(e.label, e.page, e.level)));
 
-    /* ===== BAB / ISI ===== */
-    function addHeading(title, breakBefore) {
-      if (breakBefore) children.push(pageBreak());
-      children.push(center(title, { bold: true, size: 24, after: 200, before: breakBefore ? 0 : 200 }));
+    /* ---------- ISI BAB ---------- */
+    function addBabTitle(lines, withBreak) {
+      if (withBreak) children.push(pageBreak());
+      lines.forEach((line, i) => {
+        children.push(center(line, {
+          bold: true,
+          after: i === lines.length - 1 ? 200 : 40,
+          before: (!withBreak && i === 0) ? 200 : 0
+        }));
+      });
     }
     function addSub(title) {
       children.push(p(title, { bold: true, align: AlignmentType.LEFT, after: 120, before: 160 }));
@@ -840,62 +889,55 @@ async function downloadDocx() {
       const list = (arr || []).map(t => String(t || '').trim()).filter(Boolean);
       if (!list.length) { children.push(p('[Belum diisi]', { italics: true })); return; }
       list.forEach((t, i) => children.push(p((i + 1) + '. ' + t, {
-        align: AlignmentType.JUSTIFIED,
         indent: { left: 720, hanging: 360 }
       })));
     }
 
-    addHeading('BAB I\nPENDAHULUAN'.replace('\n', ' '), true);
+    addBabTitle(['BAB I', 'PENDAHULUAN'], true);
     addSub('A. Latar Belakang'); addParas(d.bab1.latar);
     addSub('B. Rumusan Masalah'); addItems(d.bab1.rumusan);
     addSub('C. Tujuan Penulisan'); addItems(d.bab1.tujuan);
     addSub('D. Manfaat Penulisan'); addParas(d.bab1.manfaat);
 
-    addHeading('BAB II PEMBAHASAN', true);
+    addBabTitle(['BAB II', 'PEMBAHASAN'], true);
     const subs = (d.bab2.subbab || []).filter(s => (s.judul || '').trim() || (s.isi || '').trim());
     if (!subs.length) children.push(p('[Belum ada subbab]', { italics: true }));
     subs.forEach((s, i) => {
-      const label = Doc.subLabel(d.bab2.pref, i);
-      addSub(label + ' ' + (s.judul || '[judul subbab]'));
+      addSub(Doc.subLabel(d.bab2.pref, i) + ' ' + (s.judul || '[judul subbab]'));
       addParas(s.isi);
     });
 
-    addHeading('BAB III PENUTUP', true);
+    addBabTitle(['BAB III', 'PENUTUP'], true);
     addSub('A. Kesimpulan'); addParas(d.bab3.kesimpulan);
     addSub('B. Saran'); addParas(d.bab3.saran);
 
-    addHeading('DAFTAR PUSTAKA', true);
+    addBabTitle(['DAFTAR PUSTAKA'], true);
     const refs = (d.pustaka || []).filter(r => (r.judul || '').trim() || (r.penulis || '').trim());
     if (!refs.length) children.push(p('[Belum ada referensi]', { italics: true }));
     refs.forEach(r => {
       const line = (r.penulis || '[penulis]') + ' (' + (r.tahun || '[tahun]') + '). ' +
         (r.judul || '[judul]') + '. ' + (r.penerbit || '[penerbit]') + '.' +
         (r.url ? ' ' + r.url : '');
-      children.push(p(line, {
-        align: AlignmentType.JUSTIFIED,
-        indent: { left: 720, hanging: 720 }
-      }));
+      children.push(p(line, { indent: { left: 720, hanging: 720 } }));
     });
 
+    /* Satu section: cover tanpa nomor, lalu footer nomor di halaman berikutnya.
+       docx library: page numbers di footer untuk seluruh section.
+       Kita pakai satu section dengan nomor di tengah bawah (seperti PDF). */
     const docx = new Document({
       styles: {
         default: {
           document: {
-            styles: [{ id: 'Normal', run: { font: FONT, size: 24 } }]
+            styles: [{ id: 'Normal', run: { font: FONT, size: SZ } }]
           }
         }
       },
       sections: [{
         properties: {
           page: {
-            size: { width: 11906, height: 16838 }, /* A4 */
-            margin: { top: 1701, right: 1701, bottom: 1701, left: 2268 } /* 3/3/3/4 cm */
+            size: { width: 11906, height: 16838 },
+            margin: { top: 1701, right: 1701, bottom: 1701, left: 2268 }
           }
-        },
-        headers: {
-          default: new Header({
-            children: [new Paragraph({ children: [] })]
-          })
         },
         footers: {
           default: new Footer({
@@ -904,7 +946,7 @@ async function downloadDocx() {
               children: [new TextRun({
                 children: [PageNumber.CURRENT],
                 font: FONT,
-                size: 24
+                size: SZ
               })]
             })]
           })
