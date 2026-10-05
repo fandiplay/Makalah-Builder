@@ -223,12 +223,20 @@
 }
 
 @media print {
-  html, body { margin: 0; padding: 0; background: #fff; }
-  #viewDash, .appbar, .tabbar, #paneForm, .zoombar, #toast { display: none !important; }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  #viewDash, .appbar, .tabbar, #paneForm, .zoombar, #toast,
+  .ai-overlay, #checklist, .form-note { display: none !important; }
   #viewEditor, #panePaper, #paperWrap, #sheets {
     display: block !important;
     position: static !important;
     transform: none !important;
+    width: auto !important;
     height: auto !important;
     max-height: none !important;
     max-width: none !important;
@@ -242,6 +250,19 @@
     backdrop-filter: none !important;
   }
   .sheets.building { position: static !important; left: auto !important; visibility: visible !important; }
-  .sheet { box-shadow: none; margin: 0; break-inside: avoid; }
-  .sheet + .sheet { break-before: page; }
+  /* Satu .sheet = satu halaman. Jangan biarkan sheet kosong ikut tercetak. */
+  .sheet {
+    box-shadow: none !important;
+    margin: 0 !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    page-break-after: always;
+    break-after: page;
+  }
+  .sheet:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  /* Sembunyikan sheet tanpa konten (jaga-jaga sisa bug pagination) */
+  .sheet:not(:has(.pg-body > *)) { display: none !important; }
 }

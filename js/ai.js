@@ -61,34 +61,40 @@
   function aiEndpoint(fmt, base) {
     var b = aiNormBase(base);
     if (fmt === 'anthropic') return b + (/\/v1$/i.test(b) ? '/messages' : '/v1/messages');
-    return b + '/chat/completions';
+    /* Beberapa gateway sudah menyertakan /v1, beberapa belum. */
+    if (/\/v1$/i.test(b) || /\/openai\/v1$/i.test(b)) return b + '/chat/completions';
+    return b + '/v1/chat/completions';
+  }
+
+  /* Daftar kandidat URL chat untuk fallback saat 404. */
+  function aiChatUrlCandidates(fmt, base) {
+    var b = aiNormBase(base);
+    if (fmt === 'anthropic') {
+      return [
+        b + (/\/v1$/i.test(b) ? '/messages' : '/v1/messages'),
+        b + '/messages',
+        b + '/v1/messages'
+      ].filter(function (v, i, a) { return a.indexOf(v) === i; });
+    }
+    return [
+      b + '/chat/completions',
+      b + '/v1/chat/completions',
+      b.replace(/\/v1$/i, '') + '/v1/chat/completions',
+      b + '/openai/v1/chat/completions'
+    ].filter(function (v, i, a) { return a.indexOf(v) === i; });
   }
 
   /* ---------- pemanggilan API ---------- */
-  var aiActiveController = null;
-
-  function aiFetch(url, opts, externalSignal) {
-    var ac = externalSignal ? null : new AbortController();
+  function aiFetch(url, opts) {
+    var ac = new AbortController();
     var timedOut = false;
-    var signal = externalSignal || ac.signal;
-    var timer = setTimeout(function () {
-      timedOut = true;
-      if (ac) ac.abort();
-    }, AI_TIMEOUT);
+    var timer = setTimeout(function () { timedOut = true; ac.abort(); }, AI_TIMEOUT);
     var done = function (v) { clearTimeout(timer); return v; };
-    return fetch(url, Object.assign({ signal: signal }, opts)).then(
+    return fetch(url, Object.assign({ signal: ac.signal }, opts)).then(
       function (r) {
         return r.text().then(function (txt) { return done({ status: r.status, text: txt }); });
       },
-      function (err) {
-        return done({
-          status: 0,
-          text: '',
-          net: true,
-          timedOut: timedOut,
-          aborted: !!(err && err.name === 'AbortError') || (!!externalSignal && externalSignal.aborted)
-        });
-      }
+      function () { return done({ status: 0, text: '', net: true, timedOut: timedOut }); }
     );
   }
 
@@ -104,7 +110,6 @@
   }
 
   function aiErrMsg(r) {
-    if (r.aborted) return 'Proses AI dihentikan.';
     if (r.net && r.timedOut) return 'Server AI tidak menjawab dalam 60 detik. Coba lagi atau ganti model.';
     if (r.net) return 'Gagal menghubungi server AI. Periksa internet, Base URL, dan izin CORS server.';
     if (r.status < 200 || r.status >= 300) return aiHttpMsg(r.status);
@@ -153,11 +158,15 @@
   }
 
   /* balasan -> teks, atau objek { error: pesanFriendly }. */
-  function aiChat(cfg, system, user, maxTokens, signal) {
+  function aiChat(cfg, system, user, maxTokens) {
     var body = aiBody(cfg, [{ role: 'system', content: system }, { role: 'user', content: user }], maxTokens);
-    return aiFetch(aiEndpoint(cfg.fmt, cfg.base), { method: 'POST', headers: aiHeaders(cfg), body: body }, signal)
-      .then(function (r) {
+    var urls = aiChatUrlCandidates(cfg.fmt, cfg.base);
+    function attempt(i) {
+      if (i >= urls.length) return { error: 'Endpoint AI tidak ditemukan (404). Periksa Base URL di Pengaturan AI.' };
+      var url = urls[i];
+      return aiFetch(url, { method: 'POST', headers: aiHeaders(cfg), body: body }).then(function (r) {
         if (r.net) return { error: aiErrMsg(r) };
+        if (r.status === 404 || r.status === 405) return attempt(i + 1);
         if (r.status < 200 || r.status >= 300) return { error: aiHttpMsg(r.status) };
         var data = null;
         try { data = JSON.parse(r.text); } catch (e) { data = null; }
@@ -165,17 +174,42 @@
         if (typeof text !== 'string' || !text.trim()) return { error: 'Balasan AI kosong. Coba Ulangi.' };
         return { text: text };
       });
+    }
+    return attempt(0);
   }
 
   function aiTest(cfg) {
     var messages = [{ role: 'system', content: 'Balas satu kata.' }, { role: 'user', content: 'Balas: OK' }];
     var body = aiBody(cfg, messages, 8);
-    return aiFetch(aiEndpoint(cfg.fmt, cfg.base), { method: 'POST', headers: aiHeaders(cfg), body: body })
-      .then(function (r) {
-        if (r.net) return { error: aiErrMsg(r) };
-        if (r.status < 200 || r.status >= 300) return { error: aiHttpMsg(r.status) };
-        return { ok: true, model: cfg.model, status: r.status };
+    var urls = aiChatUrlCandidates(cfg.fmt, cfg.base);
+    var tried = [];
+    function attempt(i) {
+      if (i >= urls.length) {
+        return { error: 'Semua endpoint gagal (404/error). Dicoba: ' + tried.join(' · ') + '. Periksa Base URL & format API.' };
+      }
+      var url = urls[i];
+      tried.push(url);
+      return aiFetch(url, { method: 'POST', headers: aiHeaders(cfg), body: body }).then(function (r) {
+        if (r.net) {
+          if (i === urls.length - 1) return { error: aiErrMsg(r) };
+          return attempt(i + 1);
+        }
+        if (r.status === 404 || r.status === 405) return attempt(i + 1);
+        if (r.status < 200 || r.status >= 300) {
+          var extra = '';
+          try {
+            var j = JSON.parse(r.text);
+            if (j && (j.error && (j.error.message || j.error))) extra = ' — ' + (j.error.message || j.error);
+            else if (j && j.message) extra = ' — ' + j.message;
+          } catch (e) { /* ignore */ }
+          return { error: aiHttpMsg(r.status) + extra + ' (URL: ' + url + ')' };
+        }
+        /* Simpan base yang cocok agar pemanggilan berikutnya langsung benar. */
+        var workedBase = url.replace(/\/chat\/completions$/i, '').replace(/\/messages$/i, '');
+        return { ok: true, model: cfg.model, status: r.status, url: url, base: workedBase };
       });
+    }
+    return attempt(0);
   }
 
   /* Ambil daftar model dari provider (OpenAI-compatible: GET /models).
@@ -398,7 +432,7 @@
     close.className = 'btn-mini icon-btn ai-close';
     close.setAttribute('aria-label', 'Tutup');
     close.textContent = '×';
-    close.addEventListener('click', aiRequestClose);
+    close.addEventListener('click', aiClose);
     head.appendChild(close);
 
     var body = document.createElement('div');
@@ -413,15 +447,8 @@
     ov.appendChild(sheet);
     document.body.appendChild(ov);
 
-    ov.addEventListener('click', function (e) {
-      if (e.target === ov) aiRequestClose();
-    });
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && !ov.classList.contains('is-hidden')) {
-        e.preventDefault();
-        aiRequestClose();
-      }
-    });
+    ov.addEventListener('click', function (e) { if (e.target === ov) aiClose(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !ov.classList.contains('is-hidden')) aiClose(); });
 
     dlg = { ov: ov, title: title, body: body, foot: foot, onClose: null };
     return dlg;
@@ -438,66 +465,14 @@
     document.body.style.overflow = 'hidden';
   }
 
-  function aiClose(force) {
+  function aiClose() {
     if (!dlg) return;
-    if (!force && (run.busy || project.busy)) {
-      aiRequestClose();
-      return;
-    }
-    if (force) {
-      if (aiActiveController) {
-        try { aiActiveController.abort(); } catch (e) {}
-        aiActiveController = null;
-      }
-      run.seq++;
-      project.seq++;
-      run.busy = false;
-      project.busy = false;
-    }
-    if (dlg.confirm) {
-      dlg.confirm.remove();
-      dlg.confirm = null;
-    }
     dlg.ov.classList.add('is-hidden');
     dlg.ov.setAttribute('aria-hidden', 'true');
     document.body.style.overflow = '';
     var cb = dlg.onClose;
     dlg.onClose = null;
     if (cb) cb();
-  }
-
-  function aiRequestClose() {
-    if (!dlg || dlg.ov.classList.contains('is-hidden')) return;
-    if (!(run.busy || project.busy)) {
-      aiClose(true);
-      return;
-    }
-    if (dlg.confirm) return;
-    
-    var confirm = document.createElement('div');
-    confirm.className = 'ai-confirm';
-    confirm.setAttribute('role', 'alertdialog');
-    confirm.setAttribute('aria-modal', 'true');
-    confirm.innerHTML =
-      '<div class="ai-confirm-icon"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></div>' +
-      '<h3>Hentikan proses AI?</h3>' +
-      '<p>AI masih menyusun makalah. Jika ditutup sekarang, proses akan dihentikan dan hasil yang belum selesai tidak diterapkan.</p>';
-    var actions = document.createElement('div');
-    actions.className = 'ai-confirm-actions';
-    var stay = aiBtn('Lanjutkan', 'btn-ghost', function () {
-      confirm.remove();
-      dlg.confirm = null;
-    });
-    var stop = aiBtn('Tutup & Hentikan AI', 'btn-danger', function () {
-      aiClose(true);
-      toast('Proses AI dihentikan.');
-    });
-    actions.appendChild(stay);
-    actions.appendChild(stop);
-    confirm.appendChild(actions);
-    dlg.ov.appendChild(confirm);
-    dlg.confirm = confirm;
-    setTimeout(function () { stay.focus(); }, 0);
   }
 
   function aiBtn(label, cls, onClick) {
@@ -670,7 +645,11 @@
           toast(r.error || 'Tes koneksi gagal');
           return;
         }
-        setStatus('Koneksi OK (HTTP ' + (r.status || 200) + '). Memuat daftar model…', 'ok');
+        if (r.base) {
+          c.base = r.base;
+          base.value = r.base;
+        }
+        setStatus('Koneksi OK (HTTP ' + (r.status || 200) + ')' + (r.url ? ' · ' + r.url : '') + '. Memuat model…', 'ok');
         toast('Koneksi berhasil. Memuat model…');
         return aiListModels(c).then(function (ids) {
           b.disabled = false;
@@ -715,7 +694,6 @@
 
   function aiBusyView(msg) {
     run.busy = true;
-    dlg.ov.querySelector('.ai-sheet').classList.add('ai-busy');
     dlg.body.textContent = '';
     var p = document.createElement('p');
     p.className = 'ai-status';
@@ -726,7 +704,6 @@
 
   function aiErrorView(msg, onAgain) {
     run.busy = false;
-    if (dlg && dlg.ov) dlg.ov.querySelector('.ai-sheet').classList.remove('ai-busy');
     dlg.body.textContent = '';
     var p = document.createElement('p');
     p.className = 'ai-status ai-status-err';
@@ -739,7 +716,6 @@
 
   function aiRenderPreview(sec, values) {
     run.busy = false;
-    dlg.ov.querySelector('.ai-sheet').classList.remove('ai-busy');
     run.values = values;
     dlg.body.textContent = '';
     sec.fields.forEach(function (f) {
@@ -877,22 +853,14 @@
 
     /* seq: kalau diklik lagi sebelum balasan pertama tiba, yang lama diabaikan. */
     var seq = ++run.seq;
-    if (aiActiveController) {
-      try { aiActiveController.abort(); } catch (e) {}
-    }
-    aiActiveController = new AbortController();
 
     run.secId = secId;
     aiOpen('Menulis dengan AI — ' + AI_SECTIONS[secId].title);
     aiBusyView('AI sedang menulis… (maks 60 detik)');
 
-    aiChat(cfg, AI_SYSTEM, aiPrompt(secId), 4000, aiActiveController.signal).then(function (r) {
+    aiChat(cfg, AI_SYSTEM, aiPrompt(secId), 4000).then(function (r) {
       if (seq !== run.seq) return;
-      if (r.error) {
-        if (r.error === 'Proses AI dihentikan.') return;
-        aiErrorView(r.error, function () { aiGenerate(secId); });
-        return;
-      }
+      if (r.error) { aiErrorView(r.error, function () { aiGenerate(secId); }); return; }
       var data = aiParseJSON(r.text);
       if (!data || typeof data !== 'object') { aiErrorView('Balasan AI bukan JSON yang valid. Tekan Ulangi.', function () { aiGenerate(secId); }); return; }
       var sec = AI_SECTIONS[secId];
@@ -949,7 +917,6 @@
 
   function aiProjectPreview() {
     project.busy = false;
-    dlg.ov.querySelector('.ai-sheet').classList.remove('ai-busy');
     dlg.title.textContent = 'Hasil AI — Periksa sebelum diterapkan';
     dlg.body.textContent = '';
 
@@ -998,10 +965,6 @@
   function aiProjectGenerate(prompt) {
     var cfg = aiLoad();
     var seq = ++project.seq;
-    if (aiActiveController) {
-      try { aiActiveController.abort(); } catch (e) {}
-    }
-    aiActiveController = new AbortController();
     project.prompt = prompt;
     project.values = {};
     project.busy = true;
@@ -1025,10 +988,9 @@
       p.textContent = 'Menulis ' + sec.title + ' (' + i + '/' + sections.length + ')…';
       dlg.body.appendChild(p);
 
-      aiChat(cfg, AI_SYSTEM, aiPrompt(secId, prompt, project.values), 4000, aiActiveController.signal).then(function (r) {
+      aiChat(cfg, AI_SYSTEM, aiPrompt(secId, prompt, project.values), 4000).then(function (r) {
         if (seq !== project.seq) return;
         if (r.error) {
-          if (r.error === 'Proses AI dihentikan.') return;
           project.busy = false;
           aiErrorView(r.error, function () { aiProjectGenerate(project.prompt); });
           return;
@@ -1071,29 +1033,43 @@
   function aiProjectCancel() {
     project.seq++;
     project.busy = false;
-    aiClose(true);
+    aiClose();
   }
 
   /* ---------- tombol per bagian form ---------- */
 
   /* ---------- tombol pengaturan ---------- */
   function aiAddSettingsButtons() {
-    var dashBtn = document.getElementById('btnAiSettingsDash');
-    if (dashBtn && !dashBtn.dataset.bound) {
-      dashBtn.addEventListener('click', aiOpenSettings);
-      dashBtn.dataset.bound = '1';
+    var dash = document.querySelector('#viewDash .appbar-inner');
+    if (dash && !dash.querySelector('.ai-settings-dash')) {
+      var b1 = document.createElement('button');
+      b1.type = 'button';
+      b1.className = 'btn-ghost ai-settings-dash';
+      b1.innerHTML = '<i class="fa-solid fa-sliders" aria-hidden="true"></i><span class="btn-label"> Pengaturan AI</span>';
+      b1.addEventListener('click', aiOpenSettings);
+      dash.appendChild(b1);
     }
-
-    var start = document.getElementById('btnAiStartEdit');
-    if (start && !start.dataset.bound) {
+    var ed = document.querySelector('#viewEditor .editor-appbar-inner');
+    var actions = ed ? ed.querySelector('.editor-actions') : null;
+    if (ed && !ed.querySelector('.ai-start-edit')) {
+      var start = document.createElement('button');
+      start.type = 'button';
+      start.className = 'btn-primary ai-start-edit';
+      start.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span class="btn-label"> Mulai AI</span>';
+      start.title = 'Masukkan satu prompt untuk menyusun seluruh makalah';
       start.addEventListener('click', aiProjectOpen);
-      start.dataset.bound = '1';
+      if (actions) actions.appendChild(start);
+      else ed.appendChild(start);
     }
-
-    var settings = document.getElementById('btnAiSettingsEdit');
-    if (settings && !settings.dataset.bound) {
-      settings.addEventListener('click', aiOpenSettings);
-      settings.dataset.bound = '1';
+    if (ed && !ed.querySelector('.ai-settings-edit')) {
+      var b2 = document.createElement('button');
+      b2.type = 'button';
+      b2.className = 'btn-mini icon-btn ai-settings-edit';
+      b2.innerHTML = '<i class="fa-solid fa-gear" aria-hidden="true"></i>';
+      b2.title = 'Pengaturan AI';
+      b2.setAttribute('aria-label', 'Pengaturan AI');
+      b2.addEventListener('click', aiOpenSettings);
+      ed.appendChild(b2);
     }
   }
 

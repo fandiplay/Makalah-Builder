@@ -38,7 +38,6 @@ const Pager = {
     const out = [];
 
     for (const sec of sections) {
-      // blocks/base boleh berupa fungsi: Daftar Isi butuh nomor halaman isi & prakata.
       const blocks = typeof sec.blocks === 'function' ? sec.blocks(out) : sec.blocks;
       const base = typeof sec.base === 'function' ? sec.base(out) : (sec.base || 1);
       const ctx = { px, sec, sheets: [], host };
@@ -54,14 +53,12 @@ const Pager = {
       ctx.cur = ctx.mk();
 
       for (const unit of groupUnits(blocks)) {
-        // brk = blok wajib mulai halaman baru (setiap BAB, daftar pustaka).
         if (unit.brk && ctx.cur.body.children.length) ctx.cur = ctx.mk();
         if (unit.brk) ctx.cur.chapterStart = true;
         let placed = false;
         while (!placed) {
           if (fits(ctx.cur.body, unit.nodes, px)) { placed = true; continue; }
           if (ctx.cur.body.children.length === 0) {
-            // Tidak muat walau di halaman kosong: pasang yang muat, pecah sisanya
             let k = 0;
             while (k < unit.nodes.length && fitsOne(ctx.cur.body, unit.nodes[k], px)) k++;
             const rest = unit.nodes.slice(k);
@@ -71,7 +68,8 @@ const Pager = {
             } else {
               unit.nodes.forEach(n => ctx.cur.body.appendChild(n));
             }
-            ctx.cur = ctx.mk();
+            /* Jangan buka halaman baru otomatis di sini — halaman berikutnya
+               dibuat hanya jika masih ada unit sisa. */
             placed = true;
             continue;
           }
@@ -79,27 +77,39 @@ const Pager = {
         }
       }
 
-      const used = ctx.sheets.filter(s => s.body.children.length > 0);
-      ctx.sheets.slice(used.length).forEach(s => s.sheet.remove());
-      const labels = used.map((s, i) => labelFor(sec, base, i));
-      used.forEach((s, i) => {
-        if (sec.scheme === 'none') return;
+      /* Hapus SEMUA sheet kosong (bukan hanya yang di ekor). Cacat lama:
+         filter + slice(used.length) menyisakan sheet kosong di awal/tengah
+         sehingga PDF punya halaman blank ekstra. */
+      const used = [];
+      ctx.sheets.forEach(s => {
+        if (s.body.children.length > 0) used.push(s);
+        else if (s.sheet.parentNode) s.sheet.remove();
+      });
+      ctx.sheets = used;
 
-        /*
-         * Semua nomor halaman ditaruh di footer bawah-tengah, rapat ke tepi
-         * bawah kertas. Tidak ada lagi variasi "atas-kanan" untuk halaman
-         * lanjutan: posisi konsisten di semua halaman.
-         */
+      /* Cover: pastikan tepat 1 halaman. Konten cover memakai flex
+         (margin-top:auto) jadi tidak boleh dipecah multi-halaman. */
+      if (sec.id === 'cover' && used.length > 1) {
+        const first = used[0];
+        used.slice(1).forEach(s => {
+          while (s.body.firstChild) first.body.appendChild(s.body.firstChild);
+          if (s.sheet.parentNode) s.sheet.remove();
+        });
+        ctx.sheets = [first];
+      }
+
+      const labels = ctx.sheets.map((s, i) => labelFor(sec, base, i));
+      ctx.sheets.forEach((s, i) => {
+        if (sec.scheme === 'none') return;
         s.sheet.appendChild(el('span', 'pgnum bottom', labels[i]));
       });
-      out.push({ id: sec.id, sheets: used.map(s => s.sheet), labels });
+      out.push({ id: sec.id, sheets: ctx.sheets.map(s => s.sheet), labels });
     }
 
     host.classList.remove('building');
     return out;
   },
 
-  /* Nomor halaman tiap heading isi, untuk dipakai Daftar Isi. */
   mapHeads(heads, sheets) {
     sheets.forEach((sheet, i) => {
       heads.forEach(h => { if (h.page == null && sheet.contains(h.node)) h.page = i + 1; });
@@ -113,7 +123,7 @@ function groupUnits(blocks) {
     const b = blocks[i];
     if (b.keep && blocks[i + 1]) {
       units.push({ nodes: [b.node, blocks[i + 1].node], brk: !!b.brk });
-      i += 2; // blok berikutnya sudah ikut, jangan diproses lagi
+      i += 2;
     } else {
       units.push({ nodes: [b.node], brk: !!b.brk });
       i += 1;
@@ -124,8 +134,6 @@ function groupUnits(blocks) {
 
 function fits(body, nodes, px) {
   nodes.forEach(n => body.appendChild(n));
-  // clientHeight (px) sama dengan tinggi kotak 23,7 cm yang dipakai printer;
-  // scrollHeight selalu bulat ke atas, jadi toleransi 1 px.
   const limit = body.clientHeight || px;
   const ok = body.scrollHeight <= limit + 1;
   if (!ok) nodes.forEach(n => body.removeChild(n));
@@ -134,7 +142,6 @@ function fits(body, nodes, px) {
 
 const fitsOne = (body, node, px) => fits(body, [node], px);
 
-/* Ukur satu blok lalu lepas kembali: dipakai binary search saat memecah paragraf. */
 function measure(body, node, px) {
   body.appendChild(node);
   const limit = body.clientHeight || px;
@@ -143,10 +150,6 @@ function measure(body, node, px) {
   return ok;
 }
 
-/* Batas: hanya paragraf polos (tanpa elemen anak seperti <em>) yang dipecah,
-   sehingga gaya di dalam paragraf tidak ikut hilang. Paragraf ber-<em> yang
-   panjang akan tetap dipotong oleh batas halaman (konten paling bawah hilang)
-   -> ganti blok rich text bila hal ini perlu. */
 function canSplit(node) {
   return !node.children.length && node.textContent.trim().split(/\s+/).length > 3;
 }
@@ -162,7 +165,7 @@ function splitUnit(node, ctx) {
     }
     if (best === 0) {
       if (ctx.cur.body.children.length) { ctx.cur = ctx.mk(); continue; }
-      best = 1; // satu kata pun tidak muat: taruh juga, tidak ada pilihan lain
+      best = 1;
     }
     ctx.cur.body.appendChild(cloneText(node, rest.slice(0, best)));
     rest = rest.slice(best);

@@ -310,57 +310,41 @@ function renderField(f) {
       wrap.appendChild(box);
     }
   } else if (f.t === 'logo') {
-    const wrap = document.createElement('div');
-    wrap.className = 'logo-upload';
-
-    const preview = document.createElement('div');
-    preview.className = 'logo-preview-box';
+    const box = document.createElement('div');
+    box.className = 'logo-box';
     const img = document.createElement('img');
     img.id = 'logoPreview';
     img.alt = 'Pratinjau logo';
     img.className = 'logo-preview';
     img.src = App.doc.logo || logoPlaceholderDataUrl();
-    img.style.display = App.doc.logo ? 'block' : 'none';
-    preview.appendChild(img);
-
-    const info = document.createElement('div');
-    info.className = 'logo-upload-info';
-    const title = document.createElement('strong');
-    title.textContent = App.doc.logo ? 'Logo makalah' : 'Tambahkan logo';
-    const hint = document.createElement('span');
-    hint.textContent = App.doc.logo ? 'PNG atau JPG · tersimpan di draf ini' : 'PNG atau JPG · pilih dari galeri HP';
-    info.appendChild(title);
-    info.appendChild(hint);
-
-    const actions = document.createElement('div');
-    actions.className = 'logo-upload-actions';
-
+    if (!App.doc.logo) img.classList.add('is-empty');
+    box.appendChild(img);
+    const row = document.createElement('div');
+    row.className = 'logo-row';
     const file = document.createElement('input');
     file.type = 'file';
-    file.accept = 'image/png,image/jpeg';
+    file.accept = 'image/png,image/jpeg,image/webp';
     file.id = id;
-    file.className = 'file-input';
+    file.className = 'file-input sr-only';
+    file.setAttribute('aria-label', 'Pilih file logo');
     file.addEventListener('change', onLogoPick);
-
-    const pick = document.createElement('label');
-    pick.htmlFor = id;
-    pick.className = 'btn-primary file-picker-btn';
-    pick.innerHTML = '<i class="fa-solid fa-image" aria-hidden="true"></i><span>Pilih gambar</span>';
-
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'btn-ghost logo-pick';
+    pick.innerHTML = '<i class="fa-solid fa-image" aria-hidden="true"></i><span> Pilih Logo</span>';
+    pick.addEventListener('click', () => file.click());
     const clear = document.createElement('button');
     clear.type = 'button';
-    clear.className = 'btn-mini logo-clear';
+    clear.className = 'btn-mini';
     clear.dataset.act = 'logo-clear';
-    clear.textContent = 'Hapus';
+    clear.innerHTML = '<i class="fa-solid fa-trash" aria-hidden="true"></i><span> Hapus</span>';
     clear.disabled = !App.doc.logo;
-
-    actions.appendChild(file);
-    actions.appendChild(pick);
-    actions.appendChild(clear);
-
-    wrap.appendChild(preview);
-    wrap.appendChild(info);
-    wrap.appendChild(actions);  } else {
+    row.appendChild(file);
+    row.appendChild(pick);
+    row.appendChild(clear);
+    box.appendChild(row);
+    wrap.appendChild(box);
+  } else {
     // daftar dinamis: items / members / subbab / refs
     const host = document.createElement('div');
     host.id = 'list-' + f.p.replace(/\./g, '-');
@@ -455,15 +439,13 @@ function onFieldInput(e) {
 function onLogoPick(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
-  if (!/^image\/(png|jpeg)$/.test(file.type)) { toast('Format logo harus PNG atau JPG.'); e.target.value = ''; return; }
+  if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { toast('Format logo harus PNG atau JPG.'); e.target.value = ''; return; }
   if (file.size > 5 * 1024 * 1024) { toast('Logo terlalu besar (maks 5 MB).'); e.target.value = ''; return; }
   const reader = new FileReader();
   reader.onload = () => shrinkImage(reader.result, 400).then(url => {
     App.doc.logo = url;
     const prev = $('#logoPreview');
-    if (prev) { prev.src = url; prev.style.display = 'block'; }
-    const name = $('#logoFileName');
-    if (name) name.textContent = file.name;
+    if (prev) { prev.src = url; prev.classList.remove('is-empty'); }
     const clear = $('[data-act="logo-clear"]');
     if (clear) clear.disabled = false;
     touch();
@@ -507,11 +489,7 @@ function onFormAction(e) {
   if (act === 'logo-clear') {
     App.doc.logo = null;
     const prev = $('#logoPreview');
-    if (prev) { prev.src = logoPlaceholderDataUrl(); prev.style.display = 'none'; }
-    const name = $('#logoFileName');
-    if (name) name.textContent = 'Belum ada gambar';
-    const file = $('.file-input');
-    if (file) file.value = '';
+    if (prev) { prev.src = logoPlaceholderDataUrl(); prev.classList.add('is-empty'); }
     b.disabled = true;
     touch();
     return;
@@ -715,132 +693,226 @@ async function downloadDocx() {
         document.head.appendChild(s);
       });
     }
-    const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel, BorderStyle } = window.docx;
-    const paras = [];
+    const {
+      Document, Packer, Paragraph, TextRun, AlignmentType,
+      Header, Footer, PageNumber, NumberFormat, BorderStyle, TabStopType, TabStopPosition
+    } = window.docx;
+
+    const FONT = 'Times New Roman';
     const p = (text, opt = {}) => new Paragraph({
-      spacing: { after: 120, line: 360 },
+      spacing: { after: opt.after != null ? opt.after : 120, line: 360, before: opt.before || 0 },
       alignment: opt.align || AlignmentType.JUSTIFIED,
       indent: opt.indent,
-      children: [new TextRun({ text: text || '', font: 'Times New Roman', size: opt.size || 24, bold: !!opt.bold, italics: !!opt.italics })]
+      children: [new TextRun({
+        text: text == null ? '' : String(text),
+        font: FONT,
+        size: opt.size || 24,
+        bold: !!opt.bold,
+        italics: !!opt.italics,
+        underline: opt.underline ? {} : undefined
+      })]
     });
     const center = (text, opt = {}) => p(text, Object.assign({ align: AlignmentType.CENTER }, opt));
+    const blank = () => p('', { after: 0 });
+    const pageBreak = () => new Paragraph({ children: [], pageBreakBefore: true });
 
-    /* Cover ringkas */
+    const children = [];
+
+    /* ===== COVER ===== */
     if (d.template === 'sma') {
-      paras.push(center((d.jenisKarya || 'MAKALAH').toUpperCase(), { bold: true, size: 24 }));
-      paras.push(center((d.judul || '[JUDUL MAKALAH]').toUpperCase(), { bold: true, size: 32 }));
-      if (d.subjudul) paras.push(center(d.subjudul, { italics: true }));
-      paras.push(center(''));
-      paras.push(center('Disusun oleh:', { bold: true }));
-      const students = Array.isArray(d.siswaAnggota) && d.siswaAnggota.length ? d.siswaAnggota : [{ nama: d.siswa || '' }];
+      children.push(center((d.jenisKarya || 'MAKALAH').toUpperCase(), { bold: true, size: 24 }));
+      children.push(center((d.judul || '[JUDUL MAKALAH]').toUpperCase(), { bold: true, size: 32, after: 80 }));
+      if ((d.subjudul || '').trim()) children.push(center(d.subjudul.trim(), { italics: true }));
+      children.push(blank());
+      children.push(center('Disusun oleh:', { bold: true, after: 60 }));
+      const students = Array.isArray(d.siswaAnggota) && d.siswaAnggota.length
+        ? d.siswaAnggota : [{ nama: d.siswa || '', absen: '' }];
       students.forEach((s, i) => {
         const name = (s.nama || '[nama siswa]').trim();
         const absen = (s.absen || '').trim();
-        paras.push(center((i + 1) + '. ' + name + (absen ? ' (Absen ' + absen + ')' : ''), { bold: true }));
+        children.push(center(name + (absen ? ' (Absen ' + absen + ')' : ''), { bold: true, after: 40 }));
       });
-      paras.push(center(''));
-      paras.push(center('Kelas ' + (d.kelas || '[kelas]')));
-      if (d.mapel) paras.push(center('Mata Pelajaran: ' + d.mapel));
-      if (!d.sembunyikanGuru && d.guru) paras.push(center('Guru Pembimbing: ' + d.guru));
-      paras.push(center((d.sekolah || '[NAMA SEKOLAH]').toUpperCase(), { bold: true }));
-      paras.push(center((d.kota || '[kota]') + ', TAHUN AJARAN ' + (d.tahunAjaran || '')));
-    } else {
-      paras.push(center('MAKALAH', { bold: true }));
-      paras.push(center((d.judul || '[JUDUL MAKALAH]').toUpperCase(), { bold: true, size: 32 }));
-      if (d.subjudul) paras.push(center(d.subjudul, { italics: true }));
-      paras.push(center(''));
-      paras.push(center('Disusun untuk Memenuhi Tugas Mata Kuliah'));
-      paras.push(center(d.matkul || '[mata kuliah]'));
-      if (!d.sembunyikanDosen) {
-        paras.push(center('Dosen Pengampu:'));
-        paras.push(center(d.dosen || '[nama dosen, gelar]', { bold: true }));
+      children.push(blank());
+      children.push(blank());
+      children.push(center('Kelas ' + (d.kelas || '[kelas]'), { after: 40 }));
+      if ((d.mapel || '').trim()) children.push(center('Mata Pelajaran: ' + d.mapel.trim(), { after: 40 }));
+      if (!d.sembunyikanGuru && (d.guru || '').trim()) {
+        children.push(center('Guru Pembimbing: ' + d.guru.trim(), { after: 40 }));
       }
-      paras.push(center(''));
-      paras.push(center('OLEH:', { bold: true }));
-      (d.anggota || []).forEach((a, i) => paras.push(center((i + 1) + '. ' + ((a.nama || '').trim() || '[nama anggota]'))));
-      paras.push(center(''));
-      paras.push(center(d.prodi || '[program studi]', { bold: true }));
-      if (d.fakultas) paras.push(center(d.fakultas));
-      if (d.institusi) paras.push(center(d.institusi));
-      paras.push(center([d.kota || '[kota]', d.tahun || ''].filter(Boolean).join(', ')));
+      children.push(blank());
+      children.push(center((d.sekolah || '[NAMA SEKOLAH]').toUpperCase(), { bold: true, after: 40 }));
+      if ((d.kota || '').trim()) children.push(center(d.kota.trim(), { after: 40 }));
+      children.push(center('TAHUN AJARAN ' + (d.tahunAjaran || ''), { bold: true }));
+    } else {
+      children.push(center('MAKALAH', { bold: true, size: 24 }));
+      children.push(center((d.judul || '[JUDUL MAKALAH]').toUpperCase(), { bold: true, size: 32 }));
+      if ((d.subjudul || '').trim()) children.push(center(d.subjudul.trim(), { italics: true }));
+      children.push(blank());
+      children.push(center('Disusun untuk Memenuhi Tugas Mata Kuliah', { after: 40 }));
+      children.push(center(d.matkul || '[mata kuliah]', { after: 80 }));
+      if (!d.sembunyikanDosen) {
+        children.push(center('Dosen Pengampu:', { after: 40 }));
+        children.push(center(d.dosen || '[nama dosen, gelar]', { bold: true }));
+      }
+      children.push(blank());
+      children.push(center('OLEH:', { bold: true, after: 60 }));
+      (d.anggota || []).forEach((a, i) => {
+        children.push(center((i + 1) + '. ' + ((a.nama || '').trim() || '[nama anggota]'), { after: 40 }));
+      });
+      children.push(blank());
+      children.push(center(d.prodi || '[program studi]', { bold: true, after: 40 }));
+      if ((d.fakultas || '').trim()) children.push(center(d.fakultas.trim(), { after: 40 }));
+      if ((d.institusi || '').trim()) children.push(center(d.institusi.trim(), { after: 40 }));
+      children.push(center([d.kota || '[kota]', d.tahun || ''].filter(Boolean).join(', '), { bold: true }));
     }
 
-    paras.push(new Paragraph({ children: [], pageBreakBefore: true }));
-    paras.push(center('KATA PENGANTAR', { bold: true, size: 24 }));
-    const kata = (Doc.subst(d.kata.teks || '', d) || '').split(/\n\s*\n/).filter(Boolean);
-    kata.forEach(t => paras.push(p(t.replace(/\n/g, ' '))));
-    paras.push(p(''));
-    paras.push(new Paragraph({
+    /* ===== KATA PENGANTAR ===== */
+    children.push(pageBreak());
+    children.push(center('KATA PENGANTAR', { bold: true, size: 24, after: 240 }));
+    const kataTeks = (Doc.subst(d.kata.teks || '', d) || '').trim();
+    const kataParas = kataTeks.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+    if (!kataParas.length) children.push(p('[Kata pengantar belum diisi]', { italics: true }));
+    kataParas.forEach(t => children.push(p(t.replace(/\n/g, ' '))));
+    children.push(blank());
+    children.push(new Paragraph({
       alignment: AlignmentType.RIGHT,
-      children: [new TextRun({ text: [d.kota || '', d.kata.tanggal || ''].filter(Boolean).join(', '), font: 'Times New Roman', size: 24 })]
+      spacing: { after: 0, line: 360 },
+      children: [new TextRun({
+        text: [d.kota || '', d.kata.tanggal || ''].filter(Boolean).join(', '),
+        font: FONT, size: 24
+      })]
     }));
-    paras.push(new Paragraph({
+    children.push(new Paragraph({
       alignment: AlignmentType.RIGHT,
-      children: [new TextRun({ text: 'Penulis,', font: 'Times New Roman', size: 24 })]
+      spacing: { after: 0, line: 360 },
+      children: [new TextRun({ text: 'Penulis,', font: FONT, size: 24 })]
     }));
-    paras.push(new Paragraph({
+    children.push(blank());
+    children.push(blank());
+    children.push(new Paragraph({
       alignment: AlignmentType.RIGHT,
-      children: [new TextRun({ text: d.kata.penulis || 'Tim Penulis', font: 'Times New Roman', size: 24, underline: {} })]
+      spacing: { after: 0, line: 360 },
+      children: [new TextRun({
+        text: (d.kata.penulis || '').trim() || 'Tim Penulis',
+        font: FONT, size: 24, underline: {}
+      })]
     }));
+
+    /* ===== DAFTAR ISI (manual, sesuai struktur preview) ===== */
+    children.push(pageBreak());
+    children.push(center('DAFTAR ISI', { bold: true, size: 24, after: 240 }));
+
+    const tocLine = (label, pageHint, level) => new Paragraph({
+      spacing: { after: 60, line: 360 },
+      indent: level > 1 ? { left: 360 } : undefined,
+      tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.RIGHT, leader: 'dot' }],
+      children: [
+        new TextRun({ text: label, font: FONT, size: 24, bold: level === 1 }),
+        new TextRun({ text: '\t' + pageHint, font: FONT, size: 24 })
+      ]
+    });
 
     const body = Doc.bodyBlocks(d);
-    body.heads; // ensure side effect free
-    /* Bab content from form fields (simplified but complete) */
-    function addHeading(title) {
-      paras.push(new Paragraph({ children: [], pageBreakBefore: true }));
-      paras.push(center(title, { bold: true }));
+    const tocEntries = [
+      { label: 'KATA PENGANTAR', level: 1, page: 'ii' },
+      { label: 'DAFTAR ISI', level: 1, page: 'iii' }
+    ].concat(body.heads.map((h, i) => ({
+      label: h.label,
+      level: h.level,
+      page: String(i + 1) /* perkiraan; nomor final di PDF lebih akurat */
+    })));
+    tocEntries.forEach(e => children.push(tocLine(e.label, e.page, e.level)));
+
+    /* ===== BAB / ISI ===== */
+    function addHeading(title, breakBefore) {
+      if (breakBefore) children.push(pageBreak());
+      children.push(center(title, { bold: true, size: 24, after: 200, before: breakBefore ? 0 : 200 }));
     }
-    function addSub(title) { paras.push(p(title, { bold: true, align: AlignmentType.LEFT })); }
+    function addSub(title) {
+      children.push(p(title, { bold: true, align: AlignmentType.LEFT, after: 120, before: 160 }));
+    }
     function addParas(text) {
       const chunks = String(text || '').split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
-      if (!chunks.length) paras.push(p('[Bagian ini belum diisi]', { italics: true }));
-      chunks.forEach(c => paras.push(p(c.replace(/\n/g, ' '))));
+      if (!chunks.length) children.push(p('[Bagian ini belum diisi]', { italics: true }));
+      chunks.forEach(c => children.push(p(c.replace(/\n/g, ' '))));
     }
     function addItems(arr) {
       const list = (arr || []).map(t => String(t || '').trim()).filter(Boolean);
-      if (!list.length) paras.push(p('[Belum diisi]', { italics: true }));
-      list.forEach((t, i) => paras.push(p((i + 1) + '. ' + t, { align: AlignmentType.LEFT, indent: { left: 720 } })));
+      if (!list.length) { children.push(p('[Belum diisi]', { italics: true })); return; }
+      list.forEach((t, i) => children.push(p((i + 1) + '. ' + t, {
+        align: AlignmentType.JUSTIFIED,
+        indent: { left: 720, hanging: 360 }
+      })));
     }
 
-    addHeading('BAB I\nPENDAHULUAN'.replace('\n', ' — '));
+    addHeading('BAB I\nPENDAHULUAN'.replace('\n', ' '), true);
     addSub('A. Latar Belakang'); addParas(d.bab1.latar);
     addSub('B. Rumusan Masalah'); addItems(d.bab1.rumusan);
     addSub('C. Tujuan Penulisan'); addItems(d.bab1.tujuan);
     addSub('D. Manfaat Penulisan'); addParas(d.bab1.manfaat);
 
-    addHeading('BAB II PEMBAHASAN');
+    addHeading('BAB II PEMBAHASAN', true);
     const subs = (d.bab2.subbab || []).filter(s => (s.judul || '').trim() || (s.isi || '').trim());
-    if (!subs.length) paras.push(p('[Belum ada subbab]', { italics: true }));
+    if (!subs.length) children.push(p('[Belum ada subbab]', { italics: true }));
     subs.forEach((s, i) => {
       const label = Doc.subLabel(d.bab2.pref, i);
       addSub(label + ' ' + (s.judul || '[judul subbab]'));
       addParas(s.isi);
     });
 
-    addHeading('BAB III PENUTUP');
+    addHeading('BAB III PENUTUP', true);
     addSub('A. Kesimpulan'); addParas(d.bab3.kesimpulan);
     addSub('B. Saran'); addParas(d.bab3.saran);
 
-    addHeading('DAFTAR PUSTAKA');
+    addHeading('DAFTAR PUSTAKA', true);
     const refs = (d.pustaka || []).filter(r => (r.judul || '').trim() || (r.penulis || '').trim());
-    if (!refs.length) paras.push(p('[Belum ada referensi]', { italics: true }));
+    if (!refs.length) children.push(p('[Belum ada referensi]', { italics: true }));
     refs.forEach(r => {
-      const line = (r.penulis || '[penulis]') + ' (' + (r.tahun || '[tahun]') + '). ' + (r.judul || '[judul]') + '. ' + (r.penerbit || '[penerbit]') + '.' + (r.url ? ' ' + r.url : '');
-      paras.push(p(line, { align: AlignmentType.LEFT, indent: { left: 720, hanging: 720 } }));
+      const line = (r.penulis || '[penulis]') + ' (' + (r.tahun || '[tahun]') + '). ' +
+        (r.judul || '[judul]') + '. ' + (r.penerbit || '[penerbit]') + '.' +
+        (r.url ? ' ' + r.url : '');
+      children.push(p(line, {
+        align: AlignmentType.JUSTIFIED,
+        indent: { left: 720, hanging: 720 }
+      }));
     });
 
     const docx = new Document({
-      styles: { default: { document: { styles: [{ id: 'Normal', run: { font: 'Times New Roman', size: 24 } }] } } },
+      styles: {
+        default: {
+          document: {
+            styles: [{ id: 'Normal', run: { font: FONT, size: 24 } }]
+          }
+        }
+      },
       sections: [{
         properties: {
           page: {
-            size: { width: 11906, height: 16838 },
-            margin: { top: 1701, right: 1701, bottom: 1701, left: 2268 }
+            size: { width: 11906, height: 16838 }, /* A4 */
+            margin: { top: 1701, right: 1701, bottom: 1701, left: 2268 } /* 3/3/3/4 cm */
           }
         },
-        children: paras
+        headers: {
+          default: new Header({
+            children: [new Paragraph({ children: [] })]
+          })
+        },
+        footers: {
+          default: new Footer({
+            children: [new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({
+                children: [PageNumber.CURRENT],
+                font: FONT,
+                size: 24
+              })]
+            })]
+          })
+        },
+        children
       }]
     });
+
     const blob = await Packer.toBlob(docx);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
