@@ -212,7 +212,7 @@ const Doc = {
     add('cover', 'judul', 'Judul makalah', !!doc.judul.trim());
     add('cover', 'mapel', 'Mata pelajaran', !!doc.mapel.trim());
     add('cover', 'guru', 'Guru pembimbing', !!doc.guru.trim());
-    add('cover', 'siswa', 'Nama siswa', !!doc.siswa.trim());
+    add('cover', 'siswaAnggota.0.nama', 'Nama siswa', Array.isArray(doc.siswaAnggota) && doc.siswaAnggota.some(a => String(a.nama || '').trim()));
     add('cover', 'kelas', 'Kelas', !!doc.kelas.trim());
     add('cover', 'sekolah', 'Nama sekolah', !!doc.sekolah.trim());
     add('bab1', 'bab1.latar', 'Latar belakang', !!doc.bab1.latar.trim());
@@ -229,7 +229,7 @@ const Doc = {
     add('cover', 'judul', 'Judul makalah', !!doc.judul.trim());
     add('cover', 'matkul', 'Mata kuliah', !!doc.matkul.trim());
     add('cover', 'dosen', 'Dosen pengampu', !!doc.dosen.trim());
-    add('cover', 'anggota.0.nama', 'Anggota tim (nama + NIM)', doc.anggota.some(a => a.nama.trim() && a.nim.trim()));
+    add('cover', 'anggota.0.nama', 'Anggota tim', doc.anggota.some(a => a.nama.trim()));
     add('cover', 'prodi', 'Program studi', !!doc.prodi.trim());
     add('bab1', 'bab1.latar', 'Latar belakang', !!doc.bab1.latar.trim());
     add('bab1', 'bab1.rumusan.0', 'Rumusan masalah', doc.bab1.rumusan.some(t => t.trim()));
