@@ -43,19 +43,20 @@ const Pager = {
       const base = typeof sec.base === 'function' ? sec.base(out) : (sec.base || 1);
       const ctx = { px, sec, sheets: [], host };
       ctx.mk = () => {
-        const sh = el('div', 'sheet' + (sec.id === 'cover' ? ' cover' : ''));
+        const sh = el('div', 'sheet' + (sec.id === 'cover' ? ' cover ' + (sec.templateClass || '') : ''));
         const body = el('div', 'pg-body');
         sh.appendChild(body);
         host.appendChild(sh);
-        const rec = { sheet: sh, body };
+        const rec = { sheet: sh, body, chapterStart: false };
         ctx.sheets.push(rec);
         return rec;
       };
       ctx.cur = ctx.mk();
 
       for (const unit of groupUnits(blocks)) {
-        // brk = blok wajib mulai halaman baru (setiap BAB, daftar pustaka)
+        // brk = blok wajib mulai halaman baru (setiap BAB, daftar pustaka).
         if (unit.brk && ctx.cur.body.children.length) ctx.cur = ctx.mk();
+        if (unit.brk) ctx.cur.chapterStart = true;
         let placed = false;
         while (!placed) {
           if (fits(ctx.cur.body, unit.nodes, px)) { placed = true; continue; }
@@ -85,7 +86,7 @@ const Pager = {
         if (sec.scheme === 'none') return;
         // Nomor di bawah untuk halaman pembuka bab & prakata, di kanan atas untuk isi lanjutan.
         const pos = sec.scheme === 'roman' ? 'bottom'
-          : (s.body.firstElementChild && s.body.firstElementChild.classList.contains('h-bab') ? 'bottom' : 'top');
+          : ((i === 0 || s.chapterStart) ? 'bottom' : 'top');
         s.sheet.appendChild(el('span', 'pgnum ' + pos, labels[i]));
       });
       out.push({ id: sec.id, sheets: used.map(s => s.sheet), labels });
