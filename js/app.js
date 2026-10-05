@@ -311,21 +311,37 @@ function renderField(f) {
     img.src = App.doc.logo || logoPlaceholderDataUrl();
     img.style.display = App.doc.logo ? 'block' : 'none';
     wrap.appendChild(img);
+
     const row = document.createElement('div');
-    row.className = 'logo-row';
+    row.className = 'logo-row file-picker';
+
     const file = document.createElement('input');
     file.type = 'file';
     file.accept = 'image/png,image/jpeg';
     file.id = id;
     file.className = 'file-input';
     file.addEventListener('change', onLogoPick);
+
+    const pick = document.createElement('label');
+    pick.htmlFor = id;
+    pick.className = 'btn-primary file-picker-btn';
+    pick.textContent = 'Pilih gambar';
+
+    const name = document.createElement('span');
+    name.id = 'logoFileName';
+    name.className = 'file-picker-name';
+    name.textContent = App.doc.logo ? 'Logo tersimpan' : 'Belum ada gambar';
+
     const clear = document.createElement('button');
     clear.type = 'button';
-    clear.className = 'btn-mini';
+    clear.className = 'btn-mini logo-clear';
     clear.dataset.act = 'logo-clear';
-    clear.textContent = 'Hapus logo';
+    clear.textContent = 'Hapus';
     clear.disabled = !App.doc.logo;
+
     row.appendChild(file);
+    row.appendChild(pick);
+    row.appendChild(name);
     row.appendChild(clear);
     wrap.appendChild(row);
   } else {
@@ -430,6 +446,8 @@ function onLogoPick(e) {
     App.doc.logo = url;
     const prev = $('#logoPreview');
     if (prev) { prev.src = url; prev.style.display = 'block'; }
+    const name = $('#logoFileName');
+    if (name) name.textContent = file.name;
     const clear = $('[data-act="logo-clear"]');
     if (clear) clear.disabled = false;
     touch();
@@ -474,6 +492,10 @@ function onFormAction(e) {
     App.doc.logo = null;
     const prev = $('#logoPreview');
     if (prev) { prev.src = logoPlaceholderDataUrl(); prev.style.display = 'none'; }
+    const name = $('#logoFileName');
+    if (name) name.textContent = 'Belum ada gambar';
+    const file = $('.file-input');
+    if (file) file.value = '';
     b.disabled = true;
     touch();
     return;
