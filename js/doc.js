@@ -42,8 +42,8 @@ const Doc = {
     return doc.template === 'sma' ? this.coverSma(doc) : this.coverKampus(doc);
   },
 
-  /* Cover SMA: judul di atas logo, lalu identitas siswa & sekolah,
-     penutup baris tahun ajaran di dasar halaman. */
+  /* Cover SMA: dibuat padat agar banyak anggota tetap muat satu A4,
+     tetapi tetap mempertahankan hierarki cover makalah sekolah. */
   coverSma(doc) {
     const b = [];
     const push = (node, keep) => b.push({ node, keep: keep !== false });
@@ -84,30 +84,33 @@ const Doc = {
     const b = [];
     const push = (node, keep) => b.push({ node, keep: keep !== false });
 
-    push(el('p', 'c-judul', doc.judul.trim().toUpperCase() || '[JUDUL MAKALAH]'));
-    if (doc.subjudul.trim()) push(el('p', 'c-sub', doc.subjudul.trim()));
-    push(el('p', 'gap-1'));
-    push(el('p', 'no-indent', 'MAKALAH'), true);
-    push(el('p', 'no-indent', 'Disusun untuk Memenuhi Tugas Mata Kuliah'));
-    push(el('p', 'no-indent', doc.matkul.trim() || '[mata kuliah]'), true);
-    push(el('p', 'no-indent', 'Dosen Pengampu: ' + (doc.dosen.trim() || '[nama dosen, gelar]')), true);
+    /* Susunan mengikuti referensi cover kuliah:
+       MAKALAH -> judul -> keterangan tugas/dosen -> logo -> OLEH -> anggota -> identitas kampus. */
+    push(el('p', 'c-jenis', 'MAKALAH'), true);
+    push(el('p', 'c-judul', doc.judul.trim().toUpperCase() || '[JUDUL MAKALAH]'), true);
+    if (doc.subjudul.trim()) push(el('p', 'c-sub', doc.subjudul.trim()), true);
 
-    /* Logo kampus harus berada di tengah tepat sebelum "Disusun oleh". */
+    push(el('p', 'cover-gap campus-gap-1'));
+    push(el('p', 'no-indent', 'Disusun untuk Memenuhi Tugas Mata Kuliah'), true);
+    push(el('p', 'no-indent c-matkul', doc.matkul.trim() || '[mata kuliah]'), true);
+    push(el('p', 'no-indent campus-dosen-label', 'Dosen Pengampu:'), true);
+    push(el('p', 'no-indent campus-dosen', doc.dosen.trim() || '[nama dosen, gelar]'), true);
+
+    /* Logo wajib tepat di tengah sebelum identitas anggota. */
     const logo = logoNode(doc.logo, 'Logo Kampus');
     logo.classList.add('logo-kampus');
     push(logo, true);
-    push(el('p', 'gap-1'));
-    push(el('p', 'no-indent', 'Disusun oleh:'), true);
 
+    push(el('p', 'no-indent campus-oleh', 'OLEH:'), true);
     doc.anggota.forEach((a, i) => {
       push(el('p', 'c-anggota', (i + 1) + '. ' + (String(a.nama || '').trim() || '[nama anggota]')), true);
     });
 
-    push(el('p', 'gap-2'));
+    push(el('p', 'campus-bottom-gap'));
     push(el('p', 'c-kampus', doc.prodi.trim() || '[program studi]'), true);
     push(el('p', 'no-indent', doc.fakultas.trim() || '[fakultas]'), true);
     push(el('p', 'no-indent', doc.institusi.trim() || '[institusi]'), true);
-    push(el('p', 'no-indent', [doc.kota.trim() || '[kota]', doc.tahun.trim() || String(new Date().getFullYear())].join(', ')), false);
+    push(el('p', 'no-indent campus-date', [doc.kota.trim() || '[kota]', doc.tahun.trim() || String(new Date().getFullYear())].join(', ')), false);
     return b;
   },
 
