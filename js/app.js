@@ -310,16 +310,30 @@ function renderField(f) {
       wrap.appendChild(box);
     }
   } else if (f.t === 'logo') {
+    const wrap = document.createElement('div');
+    wrap.className = 'logo-upload';
+
+    const preview = document.createElement('div');
+    preview.className = 'logo-preview-box';
     const img = document.createElement('img');
     img.id = 'logoPreview';
     img.alt = 'Pratinjau logo';
     img.className = 'logo-preview';
     img.src = App.doc.logo || logoPlaceholderDataUrl();
     img.style.display = App.doc.logo ? 'block' : 'none';
-    wrap.appendChild(img);
+    preview.appendChild(img);
 
-    const row = document.createElement('div');
-    row.className = 'logo-row file-picker';
+    const info = document.createElement('div');
+    info.className = 'logo-upload-info';
+    const title = document.createElement('strong');
+    title.textContent = App.doc.logo ? 'Logo makalah' : 'Tambahkan logo';
+    const hint = document.createElement('span');
+    hint.textContent = App.doc.logo ? 'PNG atau JPG · tersimpan di draf ini' : 'PNG atau JPG · pilih dari galeri HP';
+    info.appendChild(title);
+    info.appendChild(hint);
+
+    const actions = document.createElement('div');
+    actions.className = 'logo-upload-actions';
 
     const file = document.createElement('input');
     file.type = 'file';
@@ -331,12 +345,7 @@ function renderField(f) {
     const pick = document.createElement('label');
     pick.htmlFor = id;
     pick.className = 'btn-primary file-picker-btn';
-    pick.textContent = 'Pilih gambar';
-
-    const name = document.createElement('span');
-    name.id = 'logoFileName';
-    name.className = 'file-picker-name';
-    name.textContent = App.doc.logo ? 'Logo tersimpan' : 'Belum ada gambar';
+    pick.innerHTML = '<i class="fa-solid fa-image" aria-hidden="true"></i><span>Pilih gambar</span>';
 
     const clear = document.createElement('button');
     clear.type = 'button';
@@ -345,12 +354,13 @@ function renderField(f) {
     clear.textContent = 'Hapus';
     clear.disabled = !App.doc.logo;
 
-    row.appendChild(file);
-    row.appendChild(pick);
-    row.appendChild(name);
-    row.appendChild(clear);
-    wrap.appendChild(row);
-  } else {
+    actions.appendChild(file);
+    actions.appendChild(pick);
+    actions.appendChild(clear);
+
+    wrap.appendChild(preview);
+    wrap.appendChild(info);
+    wrap.appendChild(actions);  } else {
     // daftar dinamis: items / members / subbab / refs
     const host = document.createElement('div');
     host.id = 'list-' + f.p.replace(/\./g, '-');
