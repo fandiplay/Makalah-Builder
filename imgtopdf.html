@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kompres Gambar ke PDF</title>
+<style>
+:root{--bg:#f3f6f4;--card:#fff;--ink:#14231c;--mute:#5d6f66;--line:#d5dfd9;--acc:#0f7a55;--acc-ink:#fff;--warn:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1714;--card:#17221d;--ink:#e6f0ea;--mute:#93a69b;--line:#2a3a32;--acc:#3ccf9a;--acc-ink:#04140d;--warn:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:1.5rem;margin:8px 0 4px}
+p.sub{margin:0 0 18px;color:var(--mute)}
+.drop{display:block;border:2px dashed var(--line);border-radius:14px;padding:28px 16px;text-align:center;background:var(--card);cursor:pointer}
+.drop.over{border-color:var(--acc)}
+.drop b{display:block;font-size:1.05rem}
+.drop span{color:var(--mute);font-size:.9rem}
+input[type=file]{display:none}
+.opts{display:grid;gap:14px;margin:18px 0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.opts label{display:grid;gap:6px;font-size:.92rem}
+.row{display:flex;justify-content:space-between;gap:10px}
+.row output{color:var(--acc);font-weight:600}
+input[type=range]{width:100%;accent-color:var(--acc)}
+select{padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+#list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+#list li{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px}
+#list img{width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none}
+.meta{flex:1;min-width:0}
+.meta div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.92rem}
+.meta small{color:var(--mute)}
+.btns{display:flex;gap:4px}
+button{font:inherit;cursor:pointer}
+.ic{width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.ic:disabled{opacity:.35;cursor:default}
+.ic:focus-visible,button:focus-visible,select:focus-visible,.drop:focus-within{outline:3px solid var(--acc);outline-offset:2px}
+.go{width:100%;margin-top:16px;padding:14px;border:0;border-radius:12px;background:var(--acc);color:var(--acc-ink);font-weight:700;font-size:1.05rem}
+.go:disabled{opacity:.45;cursor:default}
+.ghost{background:none;border:0;color:var(--mute);text-decoration:underline;padding:6px 0}
+#msg{margin-top:14px;font-size:.95rem}
+#msg.err{color:var(--warn)}
+#msg a{color:var(--acc);font-weight:600}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:10px;display:none}
+.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .15s}
+</style>
+</head>
+<body>
+<main>
+  <h1>Kompres Gambar ke PDF</h1>
+  <p class="sub">Pilih banyak gambar sekaligus. 1 gambar jadi 1 halaman. Semua diproses di HP/laptop kamu, tidak ada yang diupload.</p>
+
+  <label class="drop" id="drop">
+    <b>Pilih gambar atau tarik ke sini</b>
+    <span>JPG, PNG, WEBP</span>
+    <input type="file" id="file" accept="image/*" multiple>
+  </label>
+
+  <div class="opts">
+    <label>
+      <span class="row"><span>Kualitas gambar</span><output id="qo">70%</output></span>
+      <input type="range" id="q" min="20" max="100" value="70">
+    </label>
+    <label>
+      <span class="row"><span>Lebar maksimal gambar</span><output id="wo">1600 px</output></span>
+      <input type="range" id="w" min="600" max="3000" step="100" value="1600">
+    </label>
+    <label>Ukuran halaman
+      <select id="size">
+        <option value="fit">Sesuai ukuran gambar</option>
+        <option value="a4">A4 (gambar dipas di tengah)</option>
+      </select>
+    </label>
+  </div>
+
+  <ul id="list"></ul>
+  <button class="ghost" id="clear" hidden>Hapus semua</button>
+
+  <button class="go" id="go" disabled>Buat PDF</button>
+  <div class="bar" id="bar"><i></i></div>
+  <div id="msg" role="status"></div>
+</main>
+
+<script>
+(function(){
+  var files=[]; // {file,url,name}
+  var $=function(i){return document.getElementById(i)};
+  var list=$('list'),go=$('go'),msg=$('msg'),bar=$('bar');
+
+  function fmt(b){return b>1048576?(b/1048576).toFixed(2)+' MB':Math.round(b/1024)+' KB'}
+
+  $('q').oninput=function(){$('qo').textContent=this.value+'%'};
+  $('w').oninput=function(){$('wo').textContent=this.value+' px'};
+
+  function add(fl){
+    for(var i=0;i<fl.length;i++){
+      var f=fl[i];
+      if(!/^image\//.test(f.type))continue;
+      files.push({file:f,url:URL.createObjectURL(f)});
+    }
+    render();
+  }
+  $('file').onchange=function(){add(this.files);this.value=''};
+  var drop=$('drop');
+  ['dragover','dragenter'].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.add('over')})});
+  ['dragleave','drop'].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.remove('over')})});
+  drop.addEventListener('drop',function(ev){add(ev.dataTransfer.files)});
+
+  function render(){
+    list.innerHTML='';
+    files.forEach(function(it,i){
+      var li=document.createElement('li');
+      li.innerHTML='<img alt=""><div class="meta"><div></div><small></small></div><div class="btns"></div>';
+      li.querySelector('img').src=it.url;
+      li.querySelector('.meta div').textContent=(i+1)+'. '+it.file.name;
+      li.querySelector('small').textContent=fmt(it.file.size);
+      var b=li.querySelector('.btns');
+      [['↑','Naikkan',-1],['↓','Turunkan',1],['✕','Hapus',0]].forEach(function(x){
+        var btn=document.createElement('button');
+        btn.className='ic';btn.textContent=x[0];btn.title=x[1];btn.setAttribute('aria-label',x[1]+' '+it.file.name);
+        if(x[2]===-1&&i===0)btn.disabled=true;
+        if(x[2]===1&&i===files.length-1)btn.disabled=true;
+        btn.onclick=function(){
+          if(x[2]===0){URL.revokeObjectURL(it.url);files.splice(i,1)}
+          else{var j=i+x[2],t=files[i];files[i]=files[j];files[j]=t}
+          render();
+        };
+        b.appendChild(btn);
+      });
+      list.appendChild(li);
+    });
+    go.disabled=!files.length;
+    go.textContent=files.length?'Buat PDF ('+files.length+' halaman)':'Buat PDF';
+    $('clear').hidden=!files.length;
+  }
+  $('clear').onclick=function(){files.forEach(function(f){URL.revokeObjectURL(f.url)});files=[];render();msg.textContent=''};
+
+  function loadImg(url){
+    return new Promise(function(res,rej){
+      var im=new Image();
+      im.onload=function(){res(im)};
+      im.onerror=function(){rej(new Error('Gagal membaca gambar'))};
+      im.src=url;
+    });
+  }
+
+  // gambar -> JPEG (putih di belakang untuk PNG transparan)
+  function toJpeg(im,maxW,q){
+    var w=im.naturalWidth,h=im.naturalHeight;
+    if(w>maxW){h=Math.round(h*maxW/w);w=maxW}
+    var c=document.createElement('canvas');c.width=w;c.height=h;
+    var x=c.getContext('2d');
+    x.fillStyle='#fff';x.fillRect(0,0,w,h);
+    x.drawImage(im,0,0,w,h);
+    return new Promise(function(res,rej){
+      c.toBlob(function(b){
+        if(!b)return rej(new Error('Gagal kompres gambar'));
+        b.arrayBuffer().then(function(buf){res({data:new Uint8Array(buf),w:w,h:h})});
+      },'image/jpeg',q);
+    });
+  }
+
+  // Bangun PDF manual (JPEG disimpan langsung sebagai DCTDecode)
+  function buildPdf(imgs,mode){
+    var enc=new TextEncoder(),parts=[],offsets=[],pos=0;
+    function push(d){var u=typeof d==='string'?enc.encode(d):d;parts.push(u);pos+=u.length}
+    function obj(n,fn){offsets[n]=pos;push(n+' 0 obj\n');fn();push('\nendobj\n')}
+    var n=imgs.length,total=2+n*3;
+    push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+    obj(1,function(){push('<< /Type /Catalog /Pages 2 0 R >>')});
+    var kids=[];for(var i=0;i<n;i++)kids.push((3+i*3)+' 0 R');
+    obj(2,function(){push('<< /Type /Pages /Kids ['+kids.join(' ')+'] /Count '+n+' >>')});
+    imgs.forEach(function(im,i){
+      var p=3+i*3,c=p+1,x=p+2,pw,ph,dw,dh,ox,oy;
+      if(mode==='a4'){
+        pw=595.28;ph=841.89;var m=24,s=Math.min((pw-2*m)/im.w,(ph-2*m)/im.h);
+        dw=im.w*s;dh=im.h*s;ox=(pw-dw)/2;oy=(ph-dh)/2;
+      }else{
+        pw=im.w*0.75;ph=im.h*0.75;dw=pw;dh=ph;ox=0;oy=0;
+      }
+      var cs='q '+dw.toFixed(2)+' 0 0 '+dh.toFixed(2)+' '+ox.toFixed(2)+' '+oy.toFixed(2)+' cm /Im Do Q';
+      obj(p,function(){push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+pw.toFixed(2)+' '+ph.toFixed(2)+'] /Resources << /XObject << /Im '+x+' 0 R >> >> /Contents '+c+' 0 R >>')});
+      obj(c,function(){push('<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream')});
+      obj(x,function(){
+        push('<< /Type /XObject /Subtype /Image /Width '+im.w+' /Height '+im.h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+im.data.length+' >>\nstream\n');
+        push(im.data);push('\nendstream');
+      });
+    });
+    var xr=pos,s='xref\n0 '+(total+1)+'\n0000000000 65535 f \n';
+    for(var k=1;k<=total;k++)s+=('0000000000'+offsets[k]).slice(-10)+' 00000 n \n';
+    push(s+'trailer\n<< /Size '+(total+1)+' /Root 1 0 R >>\nstartxref\n'+xr+'\n%%EOF');
+    return new Blob(parts,{type:'application/pdf'});
+  }
+
+  go.onclick=async function(){
+    if(!files.length)return;
+    go.disabled=true;msg.className='';msg.textContent='Memproses...';
+    bar.style.display='block';bar.firstElementChild.style.width='0';
+    var q=$('q').value/100,maxW=+$('w').value,mode=$('size').value,imgs=[],orig=0;
+    try{
+      for(var i=0;i<files.length;i++){
+        var im=await loadImg(files[i].url);
+        imgs.push(await toJpeg(im,maxW,q));
+        orig+=files[i].file.size;
+        bar.firstElementChild.style.width=Math.round((i+1)/files.length*100)+'%';
+        await new Promise(function(r){setTimeout(r,0)});
+      }
+      var blob=buildPdf(imgs,mode),url=URL.createObjectURL(blob);
+      var name='gambar-'+new Date().toISOString().slice(0,10)+'.pdf';
+      var a=document.createElement('a');a.href=url;a.download=name;
+      msg.innerHTML='';
+      msg.append('Selesai! Total gambar '+fmt(orig)+' → PDF '+fmt(blob.size)+'. ');
+      a.textContent='Download '+name;msg.appendChild(a);
+      a.click();
+    }catch(e){
+      msg.className='err';msg.textContent='Gagal: '+e.message+'. Coba turunkan lebar maksimal atau kurangi jumlah gambar.';
+    }
+    go.disabled=false;
+    setTimeout(function(){bar.style.display='none'},600);
+  };
+})();
+</script>
+</body>
+</html>
